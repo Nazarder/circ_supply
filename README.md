@@ -314,25 +314,44 @@ pip install pandas numpy scipy matplotlib
 
 ## Conclusion
 
-Supply dynamics have a detectable effect on crypto token returns, but its exploitability
-depends sharply on where in the distribution you look and which side of the trade you take:
+Five scripts, nine strategy variants, and 106–477 months of data converge on the same
+answer: supply inflation is a real but one-sided signal.
 
-- **Present** at the individual event level (H1 Z-score, bear markets, ACAR = -2.49%)
-- **Present** at the distribution tails on the long side (10th pct: +15.20% ann., 59.4% monthly win rate vs 90th pct)
-- **Absent** at the cross-sectional quartile level (H2/H3 L/S, any regime, any variant)
-- **Absent** on the short side — shorting Q4 altcoins goes bankrupt in every configuration tested (V2, V3, and beta-hedged with BTC/ETH/Top10)
+### Where the signal is present
 
-The signal lives in the extremes, and only on the long side. High-inflation altcoins
-have positive convexity to the upside during bull markets that makes them impossible to
-short profitably — even with a linear beta hedge, because the OLS beta (~1.09) understates
-the realized bull-period multiplier (>2×). The short basket itself returns +7.38% annually
-as a long position, confirming that the crypto market tailwind overwhelms supply dilution drag.
+| Test | Finding |
+|------|---------|
+| H1 event study — Bear markets | Z-score unlock events → ACAR = -2.49% (beta-adjusted, t-significant) |
+| H1 event study — Bull markets | ACAR = +6.33% (momentum/activity effects dominate dilution) |
+| Extreme percentile — Long 10th pct | +15.20% annualized vs -7.99% for 90th pct; 59.4% monthly win rate |
 
-A practitioner seeking to exploit supply dynamics has **one defensible implementation**:
+### Where the signal fails
 
-1. **Structural long-only tilt:** Long the 10th percentile (lowest inflation),
-   equal-weighted, monthly rebalanced. Do not implement a short leg in any form.
+| Test | Reason for failure |
+|------|--------------------|
+| H2/H3 quartile L/S (V2, unconditional) | Bankrupt — middle-of-distribution tokens dilute the tail effect to noise |
+| H2/H3 Bear-Only L/S (V3) | Survives (-42% max DD) but returns -0.12% ann. after slippage |
+| H2/H3 Bull-Reverse / Regime-Switch (V3) | Bankrupt or near-bankrupt |
+| Beta-hedged L/S — all 6 configurations | Bankrupt — Q4 basket returns +7.38% as a long; positive convexity overwhelms linear hedge |
 
-The previously identified second approach (event-driven short on Z-score > 3.0 unlock
-events, bear markets only) is statistically valid (ACAR = -2.49%) but not portfolio-scalable
-— too few events per period to construct a meaningful basket position.
+### Why shorting high-inflation altcoins is non-viable
+
+The Q4 supply-inflation basket returned **+7.38% annualized as a long position** across
+the full sample. Being short it therefore carries a structural ~7% annual headwind at the
+geometric mean, compounded by a worse problem: during crypto bull markets, high-emission
+altcoins dramatically outperform their OLS-implied beta (avg ~1.09×). Realized bull-period
+multipliers exceed 2×, meaning a linear long hedge of `1.09 × BTC` is structurally
+insufficient. Beta neutralization fails because the exposure is regime-conditional and
+non-linear — a problem no trailing OLS estimate can correct for.
+
+### Practitioner implication
+
+The supply-inflation signal has exactly one viable implementation:
+
+> **Long the 10th percentile of 13-week supply inflation, equal-weighted, monthly rebalanced.
+> Do not implement a short leg in any form.**
+
+The H1 event-driven short (Z-score > 3.0, bear markets only, ACAR = -2.49%) is statistically
+real but not portfolio-scalable — the event density per period is too low to construct a
+meaningful position. It is best read as confirmatory evidence that the supply effect exists,
+not as a tradeable strategy on its own.
