@@ -47,14 +47,34 @@ major assets (BTC, BTC+ETH, cap-weighted Top 10).
 ## Pipeline
 
 ```
-CMC.xlsx
-   └── circulating_supply.py
-           └── cmc_historical_top300_filtered_with_supply.csv
-                   ├── backtest.py            (V1)
-                   ├── backtest_v2.py         (V2)
-                   ├── backtest_v3.py         (V3)
-                   ├── extreme_percentile.py  (decile absolute test)
-                   └── beta_hedged_ls.py      (beta-hedged L/S, short Q4 vs long BTC/ETH/Top10)
+CMC.xlsx / CMC.csv
+        │
+        └── circulating_supply.py
+                │
+                └── cmc_historical_top300_filtered_with_supply.csv
+                        │
+                        ├── backtest.py ─────────────────── V1: proof-of-concept
+                        │       └── h1_event_study.png
+                        │           h2_continuous_pressure_90d.png
+                        │           h3_continuous_pressure_365d.png
+                        │
+                        ├── backtest_v2.py ──────────────── V2: institutional-grade
+                        │       └── v2_h1_event_study.png
+                        │           v2_h1_bull_bear.png
+                        │           v2_h2_longshort.png
+                        │           v2_h3_longshort.png
+                        │
+                        ├── backtest_v3.py ──────────────── V3: regime-conditional L/S
+                        │       └── v3_h2_regime_ls.png
+                        │           v3_h3_regime_ls.png
+                        │
+                        ├── extreme_percentile.py ───────── decile absolute basket test
+                        │       └── extreme_pct_cumulative.png
+                        │
+                        └── beta_hedged_ls.py ───────────── beta-hedged L/S (short Q4 vs long BTC/ETH/Top10)
+                                └── bh_ls_dollar_neutral.png
+                                    bh_ls_beta_neutral.png
+                                    bh_ls_combined.png
 ```
 
 ### 1. Derive circulating supply
