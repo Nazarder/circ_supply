@@ -7,6 +7,9 @@ Three progressively more rigorous backtesting engines (V1 → V3) test the same 
 hypotheses against weekly CoinMarketCap snapshots spanning January 2017 to February 2026.
 A standalone extreme-percentile script (`extreme_percentile.py`) provides a benchmark-free
 absolute performance test of the tail ends of the supply inflation distribution.
+A final beta-hedged L/S script (`beta_hedged_ls.py`) tests whether the short side of the
+supply-dilution trade can be made viable by hedging market beta with long positions in
+major assets (BTC, BTC+ETH, cap-weighted Top 10).
 
 ---
 
@@ -50,7 +53,8 @@ CMC.xlsx
                    ├── backtest.py            (V1)
                    ├── backtest_v2.py         (V2)
                    ├── backtest_v3.py         (V3)
-                   └── extreme_percentile.py  (decile absolute test)
+                   ├── extreme_percentile.py  (decile absolute test)
+                   └── beta_hedged_ls.py      (beta-hedged L/S, short Q4 vs long BTC/ETH/Top10)
 ```
 
 ### 1. Derive circulating supply
@@ -69,6 +73,7 @@ python backtest.py            # V1 -- baseline
 python backtest_v2.py         # V2 -- institutional-grade
 python backtest_v3.py         # V3 -- regime-conditional L/S
 python extreme_percentile.py  # decile absolute basket test
+python beta_hedged_ls.py      # beta-hedged L/S, short Q4 vs long BTC/ETH/Top10
 ```
 
 Each script is self-contained and reads directly from the CSV. Output charts are
@@ -128,6 +133,25 @@ long-only baskets rebalanced monthly.
 | Rebalancing | Monthly (first snapshot of each calendar month) |
 | Forward return | 4 weeks, cross-sectional winsorized, slippage-adjusted |
 
+### Beta-Hedged L/S — `beta_hedged_ls.py`
+
+Tests whether shorting Q4 high-inflation altcoins becomes viable when combined with a
+long position in major assets to hedge market beta. Short leg is inverse-volatility
+weighted with stablecoin exclusion; tested against three long-leg variations and two
+portfolio modes (Dollar-Neutral and Beta-Neutral).
+
+| Parameter | Value |
+|-----------|-------|
+| Short leg | Q4 (≥75th pct) of 13-week supply inflation, inv-vol weighted, slippage-adjusted |
+| Stablecoin exclusion | 29 symbols blocked (USDT, USDC, DAI, BUSD, and 25 others) |
+| Long leg A | 100% BTC |
+| Long leg B | 50% BTC + 50% ETH |
+| Long leg C | Cap-weighted Top 10 non-stablecoin assets |
+| Portfolio modes | Dollar-Neutral (`R_long - R_short`) and Beta-Neutral (`β × R_long - R_short`) |
+| Beta estimation | Trailing 12-period OLS, clamped to [0.5, 3.0] |
+| Avg short basket size | ~56 tokens |
+| Rebalancing | Monthly, 106 periods |
+
 ---
 
 ## Results Summary
@@ -186,6 +210,36 @@ in 59.4% of monthly periods. The quartile-level L/S in V2/V3 failed not because 
 effect is absent, but because the middle of the distribution dilutes it — the signal
 lives in the tails.
 
+### Beta-Hedged L/S — Short Q4 vs Long Major Assets
+
+| Portfolio | Ann. Return | Volatility | Sharpe | Max Drawdown |
+|-----------|-------------|------------|--------|--------------|
+| DN: Long BTC | N/A | 81.92% | N/A | -100% |
+| DN: Long BTC+ETH | N/A | 73.15% | N/A | -100% |
+| DN: Long Top10 | N/A | 70.95% | N/A | -100% |
+| BN: Long BTC | N/A | 80.90% | N/A | -100% |
+| BN: Long BTC+ETH | N/A | 74.16% | N/A | -100% |
+| BN: Long Top10 | N/A | 71.39% | N/A | -100% |
+
+**Standalone leg reference (for diagnosis):**
+
+| Leg | Ann. Return | Sharpe | Max Drawdown |
+|-----|-------------|--------|--------------|
+| Short Leg / Q4 basket (held long) | +7.38% | 0.056 | -93.35% |
+| Long BTC | +41.92% | 0.526 | -77.52% |
+| Long BTC+ETH | +40.38% | 0.439 | -84.85% |
+| Long Top10 | +31.10% | 0.353 | -85.93% |
+
+**Trailing beta (short basket vs long leg):** avg 1.09–1.14 across all long-leg variations,
+ranging from 0.50 to 2.09.
+
+**Key finding:** All 6 portfolio configurations go bankrupt. The Q4 altcoin basket
+returns +7.38% as a long position, confirming that high-inflation altcoins have positive
+convexity vs BTC during bull runs that overwhelms any linear beta hedge. The OLS beta
+averages ~1.09 but realized bull-market multipliers exceed 2× — a linear hedge cannot
+match this non-linearity. Shorting high-inflation altcoins is structurally non-viable
+in any configuration.
+
 ---
 
 ## Output Charts
@@ -204,6 +258,9 @@ lives in the tails.
 | `v3_h2_regime_ls.png` | V3 H2 all regime-conditional variants vs index |
 | `v3_h3_regime_ls.png` | V3 H3 all regime-conditional variants vs index |
 | `extreme_pct_cumulative.png` | 10th vs 90th pct cumulative wealth curves + period spread bar chart |
+| `bh_ls_dollar_neutral.png` | Beta-hedged L/S: Dollar-Neutral portfolios (BTC / BTC+ETH / Top10) with Bear shading |
+| `bh_ls_beta_neutral.png` | Beta-hedged L/S: Beta-Neutral portfolios (BTC / BTC+ETH / Top10) with Bear shading |
+| `bh_ls_combined.png` | Beta-hedged L/S: 2-panel comparison, Dollar-Neutral vs Beta-Neutral, all 6 portfolios |
 
 ---
 
@@ -213,8 +270,7 @@ lives in the tails.
 |------|-------------|
 | `backtest_report.md` | V1 results and methodology |
 | `quant_critique_and_roadmap.md` | Critique of V1 and roadmap for V2/V3 |
-| `v2_backtest_report.md` | Full quantitative report: V2 methodology, V1 vs V2 comparison, V3 regime-conditional extension, raw script output |
-| `extreme_percentile.py` | Standalone decile basket script (no benchmark) |
+| `v2_backtest_report.md` | Full quantitative report: V2 methodology, V1 vs V2 comparison, V3 regime-conditional extension, extreme percentile test, beta-hedged L/S, cross-strategy synthesis |
 
 ---
 
@@ -239,15 +295,24 @@ pip install pandas numpy scipy matplotlib
 ## Conclusion
 
 Supply dynamics have a detectable effect on crypto token returns, but its exploitability
-depends sharply on where in the distribution you look:
+depends sharply on where in the distribution you look and which side of the trade you take:
 
 - **Present** at the individual event level (H1 Z-score, bear markets, ACAR = -2.49%)
-- **Present** at the distribution tails (10th vs 90th pct: +15.20% vs -7.99% absolute, 59.4% win rate)
-- **Absent** at the cross-sectional quartile level (H2/H3 L/S, any regime, any strategy variant)
+- **Present** at the distribution tails on the long side (10th pct: +15.20% ann., 59.4% monthly win rate vs 90th pct)
+- **Absent** at the cross-sectional quartile level (H2/H3 L/S, any regime, any variant)
+- **Absent** on the short side — shorting Q4 altcoins goes bankrupt in every configuration tested (V2, V3, and beta-hedged with BTC/ETH/Top10)
 
-The signal lives in the extremes. Middle-of-the-distribution tokens dilute the effect
-to noise. A practitioner seeking to exploit supply dynamics has two defensible approaches:
+The signal lives in the extremes, and only on the long side. High-inflation altcoins
+have positive convexity to the upside during bull markets that makes them impossible to
+short profitably — even with a linear beta hedge, because the OLS beta (~1.09) understates
+the realized bull-period multiplier (>2×). The short basket itself returns +7.38% annually
+as a long position, confirming that the crypto market tailwind overwhelms supply dilution drag.
 
-1. **Event-driven:** Trade Z-score > 3.0 unlock events in bear-market regimes (H1)
-2. **Structural basket:** Long the 10th percentile (lowest inflation), avoid or short the
-   90th percentile (highest inflation), equal-weighted, monthly rebalanced
+A practitioner seeking to exploit supply dynamics has **one defensible implementation**:
+
+1. **Structural long-only tilt:** Long the 10th percentile (lowest inflation),
+   equal-weighted, monthly rebalanced. Do not implement a short leg in any form.
+
+The previously identified second approach (event-driven short on Z-score > 3.0 unlock
+events, bear markets only) is statistically valid (ACAR = -2.49%) but not portfolio-scalable
+— too few events per period to construct a meaningful basket position.
