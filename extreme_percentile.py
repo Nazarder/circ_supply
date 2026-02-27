@@ -1,11 +1,17 @@
 """
 extreme_percentile.py
 
-Head-to-head test: 1st percentile (lowest supply inflation) vs 99th percentile
+Head-to-head test: 10th percentile (lowest supply inflation) vs 90th percentile
 (highest supply inflation) baskets, equal-weighted, no benchmark, no beta-hedging.
 
 Goal: determine whether hyper-inflationary tokens structurally underperform
 deflationary/stable tokens in absolute terms.
+
+Universe filters applied at each rebalancing date:
+  - Stablecoins excluded (USD/EUR pegged assets)
+  - CEX platform tokens excluded (exchange fee/revenue tokens)
+  - Memecoins excluded (no fundamental utility)
+  - Top 20 tokens by rank excluded (mega-caps distort tail dynamics)
 """
 
 import numpy as np
@@ -27,6 +33,51 @@ MIN_TURNOVER     = 0.001
 MAX_SLIPPAGE     = 0.02
 LOW_PCT          = 0.10  # 10th percentile cutoff
 HIGH_PCT         = 0.90  # 90th percentile cutoff
+TOP_N_EXCLUDE    = 20    # exclude tokens ranked <= this at each snapshot date
+
+# Stablecoins (price-pegged assets — no meaningful supply inflation signal)
+STABLECOINS = {
+    "USDT", "USDC", "BUSD", "DAI", "TUSD", "USDP", "GUSD", "FRAX",
+    "LUSD", "MIM", "USDN", "USTC", "UST", "HUSD", "SUSD", "PAX",
+    "USDS", "USDJ", "NUSD", "USDK", "USDX", "CUSD", "CEUR", "USDH",
+    "USDD", "FDUSD", "PYUSD", "EURC", "EURS", "USDQ", "USDB", "USDTB",
+    "SFRXETH", "OSETH", "CMETH",
+}
+
+# CEX platform tokens (exchange fee/revenue tokens — supply dynamics driven
+# by buyback programs, not project fundamentals)
+CEX_TOKENS = {
+    "BNB",   # Binance
+    "HT",    # Huobi / HTX
+    "KCS",   # KuCoin
+    "OKB",   # OKX
+    "MX",    # MEXC
+    "CRO",   # Crypto.com
+    "BIX",   # Bibox
+    "GT",    # Gate.io
+    "LEO",   # Bitfinex
+    "FTT",   # FTX (defunct)
+    "WBT",   # WhiteBIT
+    "BGB",   # Bitget
+    "BTSE",  # BTSE
+    "NEXO",  # Nexo
+    "CEL",   # Celsius (defunct)
+    "LATOKEN", "BTMX",
+}
+
+# Memecoins (no fundamental utility — pure speculative/cultural tokens)
+MEMECOINS = {
+    "DOGE", "SHIB", "FLOKI", "PEPE", "BONK", "WIF", "FARTCOIN",
+    "SAFEMOON", "ELON", "DOGELON", "MEME", "TURBO", "POPCAT", "MOG",
+    "BABYDOGE", "KISHU", "AKITA", "HOGE", "SAITAMA", "VOLT", "ELONGATE",
+    "SAMO", "BOME", "NEIRO", "SPX", "BRETT", "MYRO", "SLERF", "TOSHI",
+    "GIGA", "SUNDOG", "MOODENG", "PNUT", "ACT", "GOAT", "CHILLGUY",
+    "PONKE", "LADYS", "COQ", "AIDOGE", "WOJAK", "HUHU", "MILADY",
+    "BOBO", "QUACK", "BONE", "LEASH", "FLOOF", "PITBULL", "HOKK",
+    "CATGIRL", "SFM", "LUNC",
+}
+
+EXCLUDED = STABLECOINS | CEX_TOKENS | MEMECOINS
 
 
 # ---------------------------------------------------------------------------
@@ -149,9 +200,15 @@ def run_extreme_baskets(df: pd.DataFrame, fwd_long: pd.DataFrame):
         df.groupby("ym")["snapshot_date"].min()
     )
 
-    # Supply inflation at each snapshot
-    inf_df = df[["snapshot_date", "symbol", "supply_pct_13p"]].copy()
+    # Supply inflation at each snapshot — with universe filters
+    inf_df = df[["snapshot_date", "symbol", "supply_pct_13p", "rank"]].copy()
     inf_df = inf_df[inf_df["supply_pct_13p"].notna()]
+
+    # Remove stablecoins, CEX tokens, memecoins
+    inf_df = inf_df[~inf_df["symbol"].isin(EXCLUDED)]
+
+    # Remove top-N mega-caps (rank <= TOP_N_EXCLUDE at that snapshot date)
+    inf_df = inf_df[inf_df["rank"] > TOP_N_EXCLUDE]
 
     # Merge forward returns with inflation
     merged = fwd_long.merge(inf_df, on=["snapshot_date", "symbol"], how="inner")
