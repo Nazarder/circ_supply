@@ -5,6 +5,8 @@ subsequent price performance in the top 300 cryptocurrencies.
 
 Three progressively more rigorous backtesting engines (V1 → V3) test the same core
 hypotheses against weekly CoinMarketCap snapshots spanning January 2017 to February 2026.
+A standalone extreme-percentile script (`extreme_percentile.py`) provides a benchmark-free
+absolute performance test of the tail ends of the supply inflation distribution.
 
 ---
 
@@ -45,9 +47,10 @@ hypotheses against weekly CoinMarketCap snapshots spanning January 2017 to Febru
 CMC.xlsx
    └── circulating_supply.py
            └── cmc_historical_top300_filtered_with_supply.csv
-                   ├── backtest.py    (V1)
-                   ├── backtest_v2.py (V2)
-                   └── backtest_v3.py (V3)
+                   ├── backtest.py            (V1)
+                   ├── backtest_v2.py         (V2)
+                   ├── backtest_v3.py         (V3)
+                   └── extreme_percentile.py  (decile absolute test)
 ```
 
 ### 1. Derive circulating supply
@@ -62,9 +65,10 @@ writes `cmc_historical_top300_filtered_with_supply.csv`.
 ### 2. Run backtests
 
 ```bash
-python backtest.py       # V1 — baseline
-python backtest_v2.py    # V2 — institutional-grade
-python backtest_v3.py    # V3 — regime-conditional L/S
+python backtest.py            # V1 -- baseline
+python backtest_v2.py         # V2 -- institutional-grade
+python backtest_v3.py         # V3 -- regime-conditional L/S
+python extreme_percentile.py  # decile absolute basket test
 ```
 
 Each script is self-contained and reads directly from the CSV. Output charts are
@@ -110,6 +114,20 @@ Bull markets (+6.33%).
 | Bull-Reverse | Cash (0%) | Long Q4 / Short Q1 |
 | Regime-Switch | Long Q1 / Short Q4 | Long Q4 / Short Q1 |
 
+### Extreme Percentile — `extreme_percentile.py`
+
+Benchmark-free absolute test using the tail ends of the 13-week trailing supply
+inflation distribution. No index, no beta-hedging, no L/S — two separate equal-weight
+long-only baskets rebalanced monthly.
+
+| Parameter | Value |
+|-----------|-------|
+| Low basket | Tokens at or below 10th percentile of supply inflation |
+| High basket | Tokens at or above 90th percentile of supply inflation |
+| Avg basket size | ~23 tokens each |
+| Rebalancing | Monthly (first snapshot of each calendar month) |
+| Forward return | 4 weeks, cross-sectional winsorized, slippage-adjusted |
+
 ---
 
 ## Results Summary
@@ -146,6 +164,28 @@ In Bull markets, Z-score unlock events are positively associated with beta-adjus
 prevents capital ruin and reduces volatility 4×, but produces near-zero return after
 slippage — the supply quartile spread is not exploitable at the 4-week horizon.
 
+### Extreme Percentile — Absolute Basket Test
+
+| Basket | Ann. Return | Volatility | MaxDD |
+|--------|-------------|------------|-------|
+| 10th Pct (Low Inflation) | +15.20% | 144.63% | -96.08% |
+| 90th Pct (High Inflation) | -7.99% | 147.69% | -97.58% |
+
+**Spread (Low minus High)**
+
+| Metric | Value |
+|--------|-------|
+| Mean per-period spread | +1.74% |
+| Win rate (Low > High) | 63 / 106 periods (59.4%) |
+| Spread annualized vol | 70.69% |
+
+**Key finding:** The supply-dilution hypothesis holds in absolute terms at the decile
+level. Low-inflation tokens outperform high-inflation tokens by ~23 percentage points
+annualized (+15.20% vs -7.99%) with no benchmark or beta adjustment. Low beats High
+in 59.4% of monthly periods. The quartile-level L/S in V2/V3 failed not because the
+effect is absent, but because the middle of the distribution dilutes it — the signal
+lives in the tails.
+
 ---
 
 ## Output Charts
@@ -163,6 +203,7 @@ slippage — the supply quartile spread is not exploitable at the 4-week horizon
 | `v3_h1_bull_bear.png` | V3 H1 regime split (identical to V2) |
 | `v3_h2_regime_ls.png` | V3 H2 all regime-conditional variants vs index |
 | `v3_h3_regime_ls.png` | V3 H3 all regime-conditional variants vs index |
+| `extreme_pct_cumulative.png` | 10th vs 90th pct cumulative wealth curves + period spread bar chart |
 
 ---
 
@@ -173,6 +214,7 @@ slippage — the supply quartile spread is not exploitable at the 4-week horizon
 | `backtest_report.md` | V1 results and methodology |
 | `quant_critique_and_roadmap.md` | Critique of V1 and roadmap for V2/V3 |
 | `v2_backtest_report.md` | Full quantitative report: V2 methodology, V1 vs V2 comparison, V3 regime-conditional extension, raw script output |
+| `extreme_percentile.py` | Standalone decile basket script (no benchmark) |
 
 ---
 
@@ -196,11 +238,16 @@ pip install pandas numpy scipy matplotlib
 
 ## Conclusion
 
-Supply dynamics have a detectable but narrowly scoped effect on crypto token returns:
+Supply dynamics have a detectable effect on crypto token returns, but its exploitability
+depends sharply on where in the distribution you look:
 
-- **Present** at the individual event level (H1 Z-score, bear markets, ACAR = −2.49%)
-- **Absent** at the cross-sectional quartile level (H2/H3, any regime, any strategy variant)
+- **Present** at the individual event level (H1 Z-score, bear markets, ACAR = -2.49%)
+- **Present** at the distribution tails (10th vs 90th pct: +15.20% vs -7.99% absolute, 59.4% win rate)
+- **Absent** at the cross-sectional quartile level (H2/H3 L/S, any regime, any strategy variant)
 
-A practitioner seeking to exploit supply dynamics should focus on event-driven trades
-around Z-score > 3.0 unlock events conditioned on a prevailing bear-market regime,
-rather than systematic long/short portfolios sorted by trailing supply growth rates.
+The signal lives in the extremes. Middle-of-the-distribution tokens dilute the effect
+to noise. A practitioner seeking to exploit supply dynamics has two defensible approaches:
+
+1. **Event-driven:** Trade Z-score > 3.0 unlock events in bear-market regimes (H1)
+2. **Structural basket:** Long the 10th percentile (lowest inflation), avoid or short the
+   90th percentile (highest inflation), equal-weighted, monthly rebalanced
