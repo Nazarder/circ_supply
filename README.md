@@ -388,6 +388,62 @@ trade is structurally non-viable across all methodological permutations tested.
 
 ---
 
+## Perpetual Futures L/S Backtest (New)
+
+A second research track operationalises the supply-dilution signal as an executable
+**perpetual futures Long/Short strategy** with realistic costs, regime-aware sizing,
+and institutional-grade risk management. Three progressively more rigorous versions
+were developed and reviewed by a synthetic Senior QRM and Institutional Analyst.
+
+### Strategy overview
+
+- **Long:** lowest supply-inflation tokens (12th percentile of composite 13w+52w rank)
+- **Short:** highest supply-inflation tokens (88th percentile)
+- **Execution:** perpetual futures with funding rates, taker fees, slippage
+- **Rebalancing:** monthly, with inner buffer band to reduce turnover
+- **Universe:** rank 21-200, filtered for $5M+ daily volume, $50M+ market cap,
+  and 60+ exclusion symbols (stablecoins, CEX tokens, memes, wrapped assets, LSDs,
+  protocol synthetics, commodity-backed tokens)
+
+### Version evolution
+
+| Version | Signal | Weights | Risk | Periods | Combined net | MaxDD |
+|---------|--------|---------|------|:-------:|:---:|:---:|
+| **v1** `perpetual_ls_backtest.py` | 4w trailing | Equal | None | 108 (2017-26) | +13.6% | −78% |
+| **v2** `perpetual_ls_v2.py` | 13w trailing | sqrt(ADTV) | Regime scaling | 40 (2022-26) | −6.60% | −64% |
+| **v3** `perpetual_ls_v3.py` | 50% 13w + 50% 52w composite | inv-vol × sqrt(ADTV) | CB + altseason veto + BTC hedge | 39 (2022-26) | **+1.82%** | **−31%** |
+
+### Key findings
+
+- The supply-dilution spread is **positive in all three regimes post-2022**: Bull +84%,
+  Bear +37%, Sideways +2% (annualised geometric). The 2021 bull-run peak was the
+  primary source of prior regime-conditional failure.
+- The combined strategy's +1.82% net return is largely BTC beta (rolling beta avg 0.541).
+  After BTC hedging, residual alpha is approximately −14%, confirming the strategy is
+  not yet genuinely market-neutral.
+- **MaxDD halved from −64% to −31%** between v2 and v3 through the circuit breaker
+  (fires when short basket loses >40% in one period) and altcoin-season veto.
+- **Capacity ceiling: $5-10M AUM.** Min ADV constraints and basket concentration
+  prevent scaling beyond this level.
+
+### Running the perpetual L/S backtests
+
+```bash
+python perpetual_ls_backtest.py   # v1 baseline (full history)
+python perpetual_ls_v2.py         # v2 institutional (post-2021)
+python perpetual_ls_v3.py         # v3 risk-managed (post-2022)
+```
+
+### Reports
+
+| File | Description |
+|------|-------------|
+| `perp_ls_methodology.md` | **Full methodology document** — universe construction, signal math, execution model, risk management, known limitations, data sources for live deployment |
+| `institutional_analysis_report.md` | Institutional post-trade analysis: BTC beta decomposition, return distribution, sector bias |
+| `risk_manager_teardown.md` | Senior QRM teardown: phantom liquidity, basket composition biases, capacity limits, turnover analysis |
+
+---
+
 ## Requirements
 
 ```
