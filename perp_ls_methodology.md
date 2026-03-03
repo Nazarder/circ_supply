@@ -1,9 +1,11 @@
 # Perpetual L/S Backtest — Full Methodology, Criteria & Results
 
 **Strategy:** Supply-Dilution Long/Short on Perpetual Futures
-**Versions:** v1 → v2 → v3 → v4 → v5 → **v6 (current best)**
+**Versions:** v1 → v2 → v3 → v4 → v5 → v6 → **v7 (current best)**
 **Coverage:** 2022-01-01 → 2026-02-22 (post-2022 window)
 **Data:** CMC weekly supply snapshots + Binance USDT-M perp OHLCV + actual 8h funding rates
+
+> **v7 methodology:** See [`perp_ls_v7_methodology.md`](perp_ls_v7_methodology.md) for all v7 changes and full results (+3.97% ann. net, Sharpe +0.220, 45 periods).
 
 ---
 
@@ -456,16 +458,16 @@ rather than pure supply-dilution alpha.
 
 ### 11.1 All-versions summary
 
-| Metric | v1 (CMC, 2017+) | v2 (CMC, 2022+) | v3 (CMC, 2022+) | v4 (Binance, 2022+) | v5 (v4+cash) | **v6 (v5+freq, 2022+)** |
-|--------|:---:|:---:|:---:|:---:|:---:|:---:|
-| Periods | 108 | 40 | 39 | 39 | 39 | **19** |
-| Win rate | 58.3% | 55.0% | 56.4% | 57.7% | 53.8% | **52.6%** |
-| Mean spread | — | +2.34% | +3.74% | +2.38% | +2.38% | **+3.34%** |
-| Combined net (ann.) | +13.6% | −6.60% | +1.82% | −5.11% | −2.74% | **+0.10%** |
-| Sharpe (combined) | +0.14 | −0.161 | +0.051 | — | — | **+0.003** |
-| MaxDD | −78% | −64.3% | −31.3% | −22.89% | −23.26% | **−19.22%** |
-| Avg long basket | ~22 | 7.0 | 9.6 | ~8 | ~8 | **7.5** |
-| Avg short basket | ~22 | 9.6 | 10.2 | ~8 | ~8 | **7.6** |
+| Metric | v1 (CMC, 2017+) | v2 (CMC, 2022+) | v3 (CMC, 2022+) | v4 (Binance, 2022+) | v5 (v4+cash) | v6 (v5+freq, 2022+) | **v7 (current best)** |
+|--------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| Periods | 108 | 40 | 39 | 39 | 39 | 19 | **45** |
+| Win rate | 58.3% | 55.0% | 56.4% | 57.7% | 53.8% | 52.6% | **48.9%** |
+| Mean spread | — | +2.34% | +3.74% | +2.38% | +2.38% | +3.34% | **+2.62%** |
+| Combined net (ann.) | +13.6% | −6.60% | +1.82% | −5.11% | −2.74% | +0.10% | **+3.97%** |
+| Sharpe (combined) | +0.14 | −0.161 | +0.051 | — | — | +0.003 | **+0.220** |
+| MaxDD | −78% | −64.3% | −31.3% | −22.89% | −23.26% | −19.22% | **−20.73%** |
+| Avg long basket | ~22 | 7.0 | 9.6 | ~8 | ~8 | 7.5 | **11.4** |
+| Avg short basket | ~22 | 9.6 | 10.2 | ~8 | ~8 | 7.6 | **9.8** |
 
 **Why v1 shows +13.6%.** 2017-2020 contains many small-cap tokens with near-zero supply
 inflation that also had near-zero price movement (dead projects). As long basket members,
@@ -582,6 +584,8 @@ avoids the noise. This modification (+0.63%) has no negative side-effects.
 
 **Projected combined result (v6 + Sideways=cash):** approximately +0.10% + 0.63% ≈ **+0.73% annualised net**, MaxDD ≈ −19%, over the 2022-2026 backtest window.
 
+> **Superseded by v7.** The full v7 implementation (monthly rebal, Sideways=cash, symmetric (0.75,0.75) scaling, momentum veto) achieves **+3.97% annualised net**, MaxDD −20.73%, Sharpe +0.220 over 45 periods. See [`perp_ls_v7_methodology.md`](perp_ls_v7_methodology.md).
+
 ---
 
 ## 14. Known Limitations
@@ -686,7 +690,8 @@ carries substantial estimation uncertainty.
 | `perpetual_ls_v3.py` | v3 | Composite 13w+52w, inv-vol weights, CB, altseason veto, BTC hedge, CMC prices; 39 periods |
 | `perpetual_ls_v4.py` | v4 | **Binance perp prices + actual funding**; regime scaling; 39 periods; −5.11% ann. |
 | `perpetual_ls_v5.py` | v5 | v4 + Sideways=cash; 39 periods; −2.74% ann. |
-| **`perpetual_ls_v6.py`** | **v6** | **v4 + Bear=1mo / Bull=2mo rebalancing**; 19 periods; **+0.10% ann.** |
+| `perpetual_ls_v6.py` | v6 | v4 + Bear=1mo / Bull=2mo rebalancing; 19 periods; +0.10% ann. |
+| **`perpetual_ls_v7.py`** | **v7** | **Monthly rebal + Sideways=cash + symmetric scaling + momentum veto**; 45 periods; **+3.97% ann.** |
 | `perpetual_ls_v1_binance.py` | v1-Binance | v1 logic + Binance data; shows why universe collapse destroys v1 in 2020-2021 |
 | `perpetual_ls_experiments.py` | — | 12 isolated experiments on v6 base; A-H + I/J biweekly |
 | `fetch_binance_data.py` | — | Downloads 396-symbol weekly OHLCV + funding from Binance REST API |
@@ -695,12 +700,13 @@ carries substantial estimation uncertainty.
 
 ```bash
 # Best result
-python perpetual_ls_v6.py
+python perpetual_ls_v7.py
 
 # Full version progression
-python perpetual_ls_v4.py    # Binance data, monthly rebal   → -5.11%
-python perpetual_ls_v5.py    # + Sideways=cash               → -2.74%
-python perpetual_ls_v6.py    # + regime-aware rebal frequency → +0.10%
+python perpetual_ls_v4.py    # Binance data, monthly rebal          → -5.11%
+python perpetual_ls_v5.py    # + Sideways=cash                      → -2.74%
+python perpetual_ls_v6.py    # + regime-aware rebal frequency        → +0.10%
+python perpetual_ls_v7.py    # + symmetric scaling + momentum veto   → +3.97%
 
 # Experiment suite (A-H isolated + biweekly + COMBINED)
 python perpetual_ls_experiments.py
