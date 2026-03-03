@@ -456,11 +456,15 @@ def run_backtest(df: pd.DataFrame, regime_df: pd.DataFrame,
      basket_sizes_l, regime_out_l, scale_out_l,
      cb_count, altseason_count, momentum_veto_count,
      turnover_long_l, turnover_short_l,
-     fund_actual_long_l, fund_actual_short_l) = (
+     fund_actual_long_l, fund_actual_short_l,
+     fee_long_l, fee_short_l,
+     slip_long_l, slip_short_l) = (
         [], [], [],
         [], [], [],
         [], [], [],
         0, 0, 0,
+        [], [],
+        [], [],
         [], [],
         [], []
     )
@@ -639,6 +643,8 @@ def run_backtest(df: pd.DataFrame, regime_df: pd.DataFrame,
             scale_out_l.append((0.0, 0.0))
             fund_actual_long_l.append(0.0)
             fund_actual_short_l.append(0.0)
+            fee_long_l.append(0.0);  fee_short_l.append(0.0)
+            slip_long_l.append(0.0); slip_short_l.append(0.0)
             continue
 
         turnover_long_l.append(to_l)
@@ -690,13 +696,23 @@ def run_backtest(df: pd.DataFrame, regime_df: pd.DataFrame,
             r_short_gross = SHORT_CB_LOSS
             cb_count += 1
 
-        fee_cost = 2 * TAKER_FEE
+        # Turnover-proportional fees: only charge for tokens that actually rotate.
+        # Each opened token costs TAKER_FEE (entry); each closed token costs TAKER_FEE (exit).
+        # Held tokens incur no fee. Cost expressed as a fraction of the average basket size.
+        n_long_changes  = (len(basket_long  - prev_long_set_before) +
+                           len(prev_long_set_before  - basket_long))
+        n_short_changes = (len(basket_short - prev_short_set_before) +
+                           len(prev_short_set_before - basket_short))
+        avg_long_sz  = (len(prev_long_set_before)  + len(basket_long))  / 2.0
+        avg_short_sz = (len(prev_short_set_before) + len(basket_short)) / 2.0
+        fee_cost_long  = (n_long_changes  / max(avg_long_sz,  1.0)) * TAKER_FEE
+        fee_cost_short = (n_short_changes / max(avg_short_sz, 1.0)) * TAKER_FEE
 
         actual_fund_long_drag  = -fund_long_basket
         actual_fund_short_cred = +fund_short_basket
 
-        r_long_net  = r_long_gross  - fee_cost - slip_long  + actual_fund_long_drag
-        r_short_net = -r_short_gross - fee_cost - slip_short + actual_fund_short_cred
+        r_long_net  = r_long_gross  - fee_cost_long  - slip_long  + actual_fund_long_drag
+        r_short_net = -r_short_gross - fee_cost_short - slip_short + actual_fund_short_cred
 
         denom      = long_scale + short_scale if (long_scale + short_scale) > 0 else 1.0
         r_combined = (long_scale * r_long_net + short_scale * r_short_net) / denom
@@ -710,6 +726,10 @@ def run_backtest(df: pd.DataFrame, regime_df: pd.DataFrame,
         fund_short_cum += actual_fund_short_cred
         fund_actual_long_l.append(actual_fund_long_drag)
         fund_actual_short_l.append(actual_fund_short_cred)
+        fee_long_l.append(fee_cost_long)
+        fee_short_l.append(fee_cost_short)
+        slip_long_l.append(slip_long)
+        slip_short_l.append(slip_short)
 
         dates_out.append(t0)
         long_gross_l.append(max(r_long_gross,  -1.0))
@@ -740,6 +760,10 @@ def run_backtest(df: pd.DataFrame, regime_df: pd.DataFrame,
         fund_short_cum    = fund_short_cum,
         fund_actual_long  = fund_actual_long_l,
         fund_actual_short = fund_actual_short_l,
+        fee_actual_long   = fee_long_l,
+        fee_actual_short  = fee_short_l,
+        slip_actual_long  = slip_long_l,
+        slip_actual_short = slip_short_l,
         cb_count          = cb_count,
         altseason_count   = altseason_count,
         momentum_veto_count = momentum_veto_count,
@@ -831,14 +855,58 @@ def print_report(res: dict) -> None:
     fs  = res["fund_actual_short"]
     fcl = res["fund_long_cum"]
     fcs = res["fund_short_cum"]
-    print(f"\n  --- Actual Funding Rate Attribution ---")
-    print(f"  Cum. funding impact (long leg)  : {fcl:+.4f} ({fcl:.2%})")
-    print(f"  Cum. funding impact (short leg) : {fcs:+.4f} ({fcs:.2%})")
-    net_f = fcl + fcs
-    print(f"  Net funding impact              : {net_f:+.4f} ({net_f:.2%})")
-    if fl:
-        print(f"  Avg period long funding drag    : {np.mean(fl):+.4f} ({np.mean(fl):.2%})")
-        print(f"  Avg period short funding credit : {np.mean(fs):+.4f} ({np.mean(fs):.2%})")
+    fee_l = res.get("fee_actual_long",  [])
+    fee_s = res.get("fee_actual_short", [])
+    sli_l = res.get("slip_actual_long",  [])
+    sli_s = res.get("slip_actual_short", [])
+
+    # Active (non-Sideways) periods only for per-period averages
+    active_mask = [sc[0] > 0 or sc[1] > 0 for sc in res["scale"]]
+    def _active(lst):
+        return [v for v, m in zip(lst, active_mask) if m]
+
+    fl_a   = _active(fl);    fs_a   = _active(fs)
+    fee_la = _active(fee_l); fee_sa = _active(fee_s)
+    sli_la = _active(sli_l); sli_sa = _active(sli_s)
+    n_act  = len(fl_a) if fl_a else 1
+
+    avg_fee_l   = np.mean(fee_la) if fee_la else 0.0
+    avg_fee_s   = np.mean(fee_sa) if fee_sa else 0.0
+    avg_sli_l   = np.mean(sli_la) if sli_la else 0.0
+    avg_sli_s   = np.mean(sli_sa) if sli_sa else 0.0
+    avg_fund_l  = np.mean(fl_a)   if fl_a   else 0.0
+    avg_fund_s  = np.mean(fs_a)   if fs_a   else 0.0
+
+    cum_fee_l  = sum(fee_l)
+    cum_fee_s  = sum(fee_s)
+    cum_sli_l  = sum(sli_l)
+    cum_sli_s  = sum(sli_s)
+    total_drag = cum_fee_l + cum_fee_s + cum_sli_l + cum_sli_s - fcl - fcs
+    ann_drag   = (1 + total_drag) ** (12 / max(n, 1)) - 1
+
+    print(f"\n  --- Full Cost Attribution (net vs gross) ---")
+    print(f"  {'Component':<34} {'Avg/period (bps)':>18} {'Cumulative':>12}")
+    print(f"  {'-'*66}")
+    print(f"  {'Fee drag — long  (turnover-adj)':<34} {avg_fee_l*10000:>+16.1f}   {cum_fee_l:>+10.4f}")
+    print(f"  {'Fee drag — short (turnover-adj)':<34} {avg_fee_s*10000:>+16.1f}   {cum_fee_s:>+10.4f}")
+    print(f"  {'Slippage drag — long':<34} {avg_sli_l*10000:>+16.1f}   {cum_sli_l:>+10.4f}")
+    print(f"  {'Slippage drag — short':<34} {avg_sli_s*10000:>+16.1f}   {cum_sli_s:>+10.4f}")
+    print(f"  {'Funding drag — long':<34} {avg_fund_l*10000:>+16.1f}   {fcl:>+10.4f}")
+    print(f"  {'Funding credit — short':<34} {avg_fund_s*10000:>+16.1f}   {fcs:>+10.4f}")
+    print(f"  {'-'*66}")
+    total_avg = (avg_fee_l + avg_fee_s + avg_sli_l + avg_sli_s - avg_fund_l - avg_fund_s)
+    print(f"  {'Net total cost drag':<34} {total_avg*10000:>+16.1f}   {total_drag:>+10.4f}")
+    print(f"  {'Annualised cost drag':<34} {'':>18} {ann_drag:>+10.2%}")
+
+    # For-reference: what flat 2*TAKER_FEE would have been
+    flat_fee_per_period = 2 * TAKER_FEE
+    flat_cum = flat_fee_per_period * n_act * 2   # both legs
+    print(f"\n  Reference — old flat fee (2×{TAKER_FEE*10000:.0f}bps per basket, all periods):")
+    print(f"    Flat fee/period/basket : {flat_fee_per_period*10000:.1f} bps")
+    print(f"    Flat fee total (both)  : {flat_cum:+.4f}  vs actual {cum_fee_l+cum_fee_s:+.4f}")
+    delta = (cum_fee_l + cum_fee_s) - flat_cum
+    print(f"    Difference (actual−flat): {delta:+.4f}  "
+          f"({'lower' if delta < 0 else 'higher'} cost with turnover-adj)")
 
     # -----------------------------------------------------------------------
     # [FULL-4] Section A — Pre-2021 vs 2021+ basket analysis
