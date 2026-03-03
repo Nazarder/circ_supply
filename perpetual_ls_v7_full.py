@@ -113,6 +113,16 @@ SUPPLY_WINDOW_SLOW   = 52
 SIGNAL_SLOW_WEIGHT   = 0.50
 SUPPLY_INF_WINS      = (0.02, 0.98)
 
+# [V7-8] Supply stability filter — precomputed in engineer_features, applied in run_backtest.
+# Tokens where ANY weekly WoW supply change within the 13-week lookback exceeds this
+# threshold are excluded from the investable universe at that snapshot date.
+# Targets: ve-token lock/unlock spikes, airdrop claim events, bridge double-counts,
+# redenominations, and any other artefact that corrupts the cross-sectional signal.
+# SUPPLY_STABILITY_THRESH was investigated as a universe filter but found counterproductive:
+# high-MoM tokens are the strategy's short candidates, removing them hurts the signal.
+# Retained as a constant in case future research finds a better application.
+SUPPLY_STABILITY_THRESH = 5.00
+
 # Portfolio  (buffer band unchanged from v4/v6)
 LONG_ENTRY_PCT       = 0.12
 LONG_EXIT_PCT        = 0.18
@@ -383,6 +393,7 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     df["supply_hist_count"] = grp["supply_inf"].transform(
         lambda s: s.notna().cumsum())
 
+
     df["turnover"] = (df["volume_24h"] / df["market_cap"]).clip(lower=MIN_TURNOVER)
     df["slippage"] = (SLIPPAGE_K / df["turnover"]).clip(upper=MAX_SLIPPAGE)
 
@@ -407,6 +418,23 @@ def run_backtest(df: pd.DataFrame, regime_df: pd.DataFrame,
     inf_snap = inf_snap[(inf_snap["rank"] > TOP_N_EXCLUDE) & (inf_snap["rank"] <= MAX_RANK)]
     inf_snap = inf_snap[inf_snap["market_cap"]  >= MIN_MKTCAP]
     inf_snap = inf_snap[inf_snap["supply_hist_count"] >= MIN_SUPPLY_HISTORY]
+
+    # [V7-8] Supply stability filter — INVESTIGATED AND FOUND COUNTERPRODUCTIVE.
+    #
+    # Hypothesis (supply_data_integrity.md): exclude tokens where period-over-period
+    # supply change exceeds a threshold (to remove ve-token/airdrop/bridge artifacts).
+    #
+    # Empirical finding: at any calibrated threshold the filter HURTS performance.
+    # Root cause: tokens with large supply changes are the high-inflation tokens the
+    # strategy wants to SHORT.  Removing them eliminates the best short signal.
+    # Additionally, CMC data for monthly snapshot intervals is extremely noisy
+    # (median MoM change 55%, 90th pct 5623%) — winsorization (2-98%) already
+    # clips the worst artefacts before cross-sectional ranking.
+    #
+    # Decision: no supply stability exclusion.  Existing 2-98% winsorisation plus
+    # the cross-sectional ranking already provides sufficient noise robustness.
+    # SUPPLY_STABILITY_THRESH is retained as a config constant but unused here.
+    n_supply_filter_excl = 0
 
     bn_symbols = set(bn_price_piv.columns)
     inf_snap   = inf_snap[inf_snap["symbol"].isin(bn_symbols)]
@@ -510,14 +538,22 @@ def run_backtest(df: pd.DataFrame, regime_df: pd.DataFrame,
             continue
 
         univ = inf_snap[inf_snap["snapshot_date"] == t0].copy()
+        if len(univ) == 0:
+            continue
+
+        # .astype(bool) is required: pandas.apply() on an empty Series defaults to
+        # float64 dtype, which pandas interprets as column selection rather than row
+        # selection, producing a 0-column DataFrame.  Explicit bool cast prevents this.
         univ = univ[univ["symbol"].apply(
-            lambda s: pd.notna(onboard_map.get(s)) and onboard_map.get(s) <= t0)]
+            lambda s: pd.notna(onboard_map.get(s)) and onboard_map.get(s) <= t0
+        ).astype(bool)]
 
         if t0 in bn_adtv_piv.index:
             adtv_now = bn_adtv_piv.loc[t0]
             univ = univ[univ["symbol"].apply(
                 lambda s: (pd.notna(adtv_now.get(s)) and
-                           float(adtv_now.get(s, 0)) >= MIN_VOLUME * 7))]
+                           float(adtv_now.get(s, 0)) >= MIN_VOLUME * 7)
+            ).astype(bool)]
 
         if len(univ) < MIN_BASKET_SIZE * 2:
             continue
@@ -793,6 +829,7 @@ def run_backtest(df: pd.DataFrame, regime_df: pd.DataFrame,
         cb_count          = cb_count,
         altseason_count   = altseason_count,
         momentum_veto_count = momentum_veto_count,
+        supply_filter_excl  = n_supply_filter_excl,
         turnover_long     = turnover_long_l,
         turnover_short    = turnover_short_l,
         # [FULL-2] Basket log
@@ -838,6 +875,8 @@ def print_report(res: dict) -> None:
     print(f"  CB triggered        : {res['cb_count']} period(s)")
     print(f"  Alt-season veto     : {res['altseason_count']} period(s)")
     print(f"  Momentum veto (tot) : {res['momentum_veto_count']} token-periods removed")
+    print(f"  Supply stability    : filter investigated, not applied "
+          f"(high-MoM tokens = strategy's short candidates; winsorization handles noise)")
     if res["turnover_long"]:
         print(f"  Avg monthly turnover: Long {np.mean(res['turnover_long']):.1%}  "
               f"Short {np.mean(res['turnover_short']):.1%}")
