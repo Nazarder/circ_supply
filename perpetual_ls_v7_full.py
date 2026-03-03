@@ -753,6 +753,9 @@ def run_backtest(df: pd.DataFrame, regime_df: pd.DataFrame,
         spread_gross      = pd.Series(
             [lg - sg for lg, sg in zip(long_gross_l, short_gross_l)],
             index=idx, name="Spread Gross"),
+        spread_net        = pd.Series(
+            [ln + sn for ln, sn in zip(long_net_l, short_net_l)],
+            index=idx, name="Spread Net"),
         basket_sizes      = basket_sizes_l,
         regime            = regime_out_l,
         scale             = scale_out_l,
@@ -819,11 +822,10 @@ def print_report(res: dict) -> None:
           f"{'Sharpe':>7} {'Sharpe*':>8} {'Sortino':>8} {'MaxDD':>9}")
     print("  " + "-" * 78)
     for name, s in [
-        ("Long basket  (gross)",  res["long_gross"]),
-        ("Short basket (gross)",  res["short_gross"]),
-        ("Long leg     (net)",    res["long_net"]),
-        ("Short leg    (net)^",   res["short_net"]),
-        ("L/S Combined (net)",    res["combined_net"]),
+        ("Long leg     (net)",  res["long_net"]),
+        ("Short leg    (net)^", res["short_net"]),
+        ("L/S Spread   (net)",  res["spread_net"]),
+        ("L/S Combined (net)",  res["combined_net"]),
     ]:
         st = portfolio_stats(s)
         print(f"  {name:<34} {_fmt(st['ann_return']):>9} {_fmt(st['vol']):>9} "
@@ -831,14 +833,14 @@ def print_report(res: dict) -> None:
               f"{_fmtf(st['sortino']):>8} {_fmt(st['max_dd']):>9}")
     print("  * Lo (2002) HAC-corrected Sharpe   ^ Short net: +ve = profit for short")
 
-    sp = res["spread_gross"]
-    print(f"\n  Win rate (Long > Short, gross) : {(sp>0).sum()}/{len(sp)} ({(sp>0).mean():.1%})")
-    print(f"  Mean period spread (gross)     : {sp.mean():.2%}")
+    sp = res["spread_net"]
+    print(f"\n  Win rate (Long > Short, net)   : {(sp>0).sum()}/{len(sp)} ({(sp>0).mean():.1%})")
+    print(f"  Mean period spread (net)       : {sp.mean():.2%}")
     print(f"  Spread ann. vol                : {_fmt(portfolio_stats(sp)['vol'])}")
     print(f"  Spread excess kurtosis         : {sp.kurtosis():.2f}")
     print(f"  Spread skewness                : {sp.skew():.2f}")
 
-    print(f"\n  --- Regime-Conditional Spread (gross) ---")
+    print(f"\n  --- Regime-Conditional Spread (net) ---")
     print(f"  {'Regime':<12} {'N':>4} {'Mean Spread':>13} {'Win Rate':>10} "
           f"{'Ann.Geo.Spread':>16}")
     for regime in ["Bull", "Bear", "Sideways"]:
@@ -1088,7 +1090,7 @@ def plot_results(res: dict) -> None:
         elif start and prev == "Bull":
             ax.axvspan(start, res["dates"][-1], alpha=0.06, color="steelblue", zorder=0)
 
-    sp   = res["spread_gross"]
+    sp   = res["spread_net"]
     regs = np.array(res["regime"])
     rc   = {"Bull": "steelblue", "Bear": "crimson", "Sideways": "gray"}
 
@@ -1102,9 +1104,9 @@ def plot_results(res: dict) -> None:
 
     ax = axes[0]
     for series, color, lw, ls, label in [
-        (res["long_gross"],  "steelblue",      1.5, "-",  "Long basket (gross)"),
-        (res["short_gross"], "crimson",          1.5, "-",  "Short basket (gross)"),
-        (res["long_net"],    "cornflowerblue",  1.5, "--", "Long leg (net)"),
+        (res["long_net"],    "steelblue",       1.5, "-",  "Long leg (net)"),
+        (res["short_net"],   "crimson",          1.5, "-",  "Short leg (net)"),
+        (res["spread_net"],  "darkorange",       1.5, "--", "L/S Spread (net)"),
         (res["combined_net"],"mediumseagreen",  2.5, "-",  "L/S Combined (net)"),
     ]:
         cum = (1 + series.dropna()).cumprod()
@@ -1131,8 +1133,8 @@ def plot_results(res: dict) -> None:
     ax3.bar(sp.index, sp.values, color=bar_cols, width=20, alpha=0.8)
     ax3.axhline(0, color="black", lw=0.8)
     ax3.legend(handles=[Patch(color=c, alpha=0.7, label=l) for l, c in rc.items()], fontsize=9)
-    ax3.set_ylabel("Period Spread (gross)"); ax3.set_xlabel("Rebalance Date")
-    ax3.set_title("Per-Period Gross Spread by Regime")
+    ax3.set_ylabel("Period Spread (net)"); ax3.set_xlabel("Rebalance Date")
+    ax3.set_title("Per-Period Net Spread by Regime")
     ax3.grid(True, alpha=0.2)
     fig.tight_layout()
     out1 = OUTPUT_DIR + "perp_ls_v7_full_cumulative.png"
