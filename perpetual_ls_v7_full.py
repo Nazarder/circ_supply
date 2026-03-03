@@ -413,8 +413,31 @@ def run_backtest(df: pd.DataFrame, regime_df: pd.DataFrame,
 
     price_piv_cmc = df.pivot_table(index="snapshot_date", columns="symbol",
                                    values="price", aggfunc="last")
-    slip_piv = df.pivot_table(index="snapshot_date", columns="symbol",
-                              values="slippage", aggfunc="last")
+
+    # ------------------------------------------------------------------
+    # Slippage pivot — Binance USDT-M perp ADTV (replaces CMC spot volume)
+    #
+    # bn_adtv_piv holds weekly USD quote_volume from Binance USDT-M perps,
+    # indexed by cmc_date (= week_start + 6 days), which aligns 1-for-1
+    # with CMC snapshot_date (confirmed: 320 overlapping dates, 2020-01-12
+    # through 2026-02-22, covering all 51 backtest periods).
+    #
+    # Formula kept identical to CMC model so K is directly comparable:
+    #   slippage = SLIPPAGE_K / (binance_daily_adtv / market_cap)
+    #            = SLIPPAGE_K / binance_turnover_rate
+    #
+    # Binance perp volume is the exact instrument being traded; using it
+    # gives a more realistic liquidity estimate than CMC aggregate spot.
+    # ------------------------------------------------------------------
+    mcap_piv      = df.pivot_table(index="snapshot_date", columns="symbol",
+                                   values="market_cap", aggfunc="last")
+    bn_daily_adtv = bn_adtv_piv / 7.0   # weekly USD quote_volume → daily
+
+    common_bn_dates = bn_daily_adtv.index.intersection(mcap_piv.index)
+    bn_turn  = (bn_daily_adtv.loc[common_bn_dates]
+                .div(mcap_piv.loc[common_bn_dates].clip(lower=1e6))
+                .clip(lower=MIN_TURNOVER))
+    slip_piv = (SLIPPAGE_K / bn_turn).clip(upper=MAX_SLIPPAGE)
 
     # Altseason pre-computation (unchanged from v4/v6)
     altseason_map = {}
@@ -792,6 +815,7 @@ def print_report(res: dict) -> None:
     print("  Signal : 50% rank(13w) + 50% rank(52w), winsorised 2-98pct")
     print("  Prices : Binance USDT-M weekly perp close")
     print("  Funding: Actual 8h Binance funding rates")
+    print("  Slip   : Binance USDT-M perp ADTV (daily = weekly / 7), NOT CMC spot")
     print("  Rebal  : Monthly always (no regime-aware stepping)")
     print("  Regime : Sideways=cash | Bull=(0.75L, 0.75S) symmetric | Bear=(0.75L, 0.75S)")
     print("  Shorts : Momentum veto (top-50pct 1m return within candidate pool excluded)")
@@ -887,6 +911,7 @@ def print_report(res: dict) -> None:
     ann_drag   = (1 + total_drag) ** (12 / max(n, 1)) - 1
 
     print(f"\n  --- Full Cost Attribution (net vs gross) ---")
+    print(f"  [Slippage source: Binance USDT-M perp daily ADTV — same K={SLIPPAGE_K}, same formula]")
     print(f"  {'Component':<34} {'Avg/period (bps)':>18} {'Cumulative':>12}")
     print(f"  {'-'*66}")
     print(f"  {'Fee drag — long  (turnover-adj)':<34} {avg_fee_l*10000:>+16.1f}   {cum_fee_l:>+10.4f}")
