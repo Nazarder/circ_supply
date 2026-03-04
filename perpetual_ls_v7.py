@@ -448,6 +448,13 @@ def run_backtest(df: pd.DataFrame, regime_df: pd.DataFrame,
     fund_long_cum  = 0.0
     fund_short_cum = 0.0
 
+    # Basket composition log and trade count accumulators
+    basket_log         = []
+    total_long_opens   = 0
+    total_long_closes  = 0
+    total_short_opens  = 0
+    total_short_closes = 0
+
     for i, t0 in enumerate(sorted_rebals[:-1]):
         t1 = sorted_rebals[i + 1]
 
@@ -455,14 +462,22 @@ def run_backtest(df: pd.DataFrame, regime_df: pd.DataFrame,
             continue
 
         univ = inf_snap[inf_snap["snapshot_date"] == t0].copy()
+        if len(univ) == 0:
+            continue
+
+        # .astype(bool) is required: pandas.apply() on an empty Series defaults to
+        # float64 dtype, which pandas interprets as column selection rather than row
+        # selection, producing a 0-column DataFrame.  Explicit bool cast prevents this.
         univ = univ[univ["symbol"].apply(
-            lambda s: pd.notna(onboard_map.get(s)) and onboard_map.get(s) <= t0)]
+            lambda s: pd.notna(onboard_map.get(s)) and onboard_map.get(s) <= t0
+        ).astype(bool)]
 
         if t0 in bn_adtv_piv.index:
             adtv_now = bn_adtv_piv.loc[t0]
             univ = univ[univ["symbol"].apply(
                 lambda s: (pd.notna(adtv_now.get(s)) and
-                           float(adtv_now.get(s, 0)) >= MIN_VOLUME * 7))]
+                           float(adtv_now.get(s, 0)) >= MIN_VOLUME * 7)
+            ).astype(bool)]
 
         if len(univ) < MIN_BASKET_SIZE * 2:
             continue
@@ -573,8 +588,28 @@ def run_backtest(df: pd.DataFrame, regime_df: pd.DataFrame,
         to_s = (1 - len(basket_short & prev_short_set) /
                 max(len(basket_short | prev_short_set), 1)) if prev_short_set else 1.0
 
+        # Capture previous baskets BEFORE updating state (for opens/closes tracking)
+        prev_long_set_before  = set(prev_long_set)
+        prev_short_set_before = set(prev_short_set)
+
         prev_long_set  = basket_long
         prev_short_set = basket_short
+
+        # Log basket composition and accumulate trade counts
+        basket_log.append({
+            "date":         t0,
+            "regime":       regime,
+            "long":         sorted(basket_long),
+            "short":        sorted(basket_short),
+            "long_opens":   sorted(basket_long  - prev_long_set_before),
+            "long_closes":  sorted(prev_long_set_before  - basket_long),
+            "short_opens":  sorted(basket_short - prev_short_set_before),
+            "short_closes": sorted(prev_short_set_before - basket_short),
+        })
+        total_long_opens   += len(basket_long  - prev_long_set_before)
+        total_long_closes  += len(prev_long_set_before  - basket_long)
+        total_short_opens  += len(basket_short - prev_short_set_before)
+        total_short_closes += len(prev_short_set_before - basket_short)
 
         # [V7-2] Sideways = hold cash (0% return, no costs)
         if long_scale == 0.0 and short_scale == 0.0:
@@ -695,6 +730,11 @@ def run_backtest(df: pd.DataFrame, regime_df: pd.DataFrame,
         momentum_veto_count = momentum_veto_count,
         turnover_long     = turnover_long_l,
         turnover_short    = turnover_short_l,
+        basket_log        = basket_log,
+        total_long_opens  = total_long_opens,
+        total_long_closes = total_long_closes,
+        total_short_opens  = total_short_opens,
+        total_short_closes = total_short_closes,
     )
 
 
@@ -824,6 +864,66 @@ def print_report(res: dict) -> None:
           f"{_f(V6['side_geo']):>10} {side_v7:>10}")
     print("=" * 78)
 
+    # --- Trade Counts ---
+    tlo = res.get("total_long_opens",   0)
+    tlc = res.get("total_long_closes",  0)
+    tso = res.get("total_short_opens",  0)
+    tsc = res.get("total_short_closes", 0)
+    bl  = res.get("basket_log", [])
+    n_bl = max(len(bl), 1)
+
+    print(f"\n  --- Trade Count ---")
+    print(f"  Long leg  : {tlo} opens, {tlc} closes ({tlo + tlc} total)")
+    print(f"  Short leg : {tso} opens, {tsc} closes ({tso + tsc} total)")
+    print(f"  All legs  : {tlo + tlc + tso + tsc} trades | "
+          f"{(tlo + tlc + tso + tsc) / n_bl:.1f} avg per period")
+
+    # --- Avg basket size by regime ---
+    if bl:
+        print(f"\n  --- Avg Basket Size by Regime ---")
+        print(f"  {'Regime':<10} {'N':>4}  {'Avg Long':>9}  {'Avg Short':>10}")
+        for reg in ["Bull", "Bear", "Sideways"]:
+            sub = [e for e in bl if e["regime"] == reg]
+            if not sub:
+                continue
+            al = np.mean([len(e["long"])  for e in sub])
+            as_ = np.mean([len(e["short"]) for e in sub])
+            print(f"  {reg:<10} {len(sub):>4}  {al:>9.1f}  {as_:>10.1f}")
+
+    # --- Most frequent tokens ---
+    if bl:
+        from collections import Counter
+        long_freq  = Counter(t for e in bl for t in e["long"])
+        short_freq = Counter(t for e in bl for t in e["short"])
+        top_long   = long_freq.most_common(10)
+        top_short  = short_freq.most_common(10)
+        total_periods = len(bl)
+        print(f"\n  --- Most Frequent Long Basket Tokens (of {total_periods} periods) ---")
+        for sym, cnt in top_long:
+            print(f"    {sym:<12}  {cnt:>3} periods  ({cnt/total_periods:.0%})")
+        print(f"\n  --- Most Frequent Short Basket Tokens (of {total_periods} periods) ---")
+        for sym, cnt in top_short:
+            print(f"    {sym:<12}  {cnt:>3} periods  ({cnt/total_periods:.0%})")
+
+    # --- Per-period basket listing ---
+    if bl:
+        print(f"\n  --- Per-Period Baskets ---")
+        print(f"  {'Date':<12} {'Rgm':<8} {'Long basket':<55} {'Short basket'}")
+        print(f"  {'-'*130}")
+        for e in bl:
+            date_s  = e["date"].strftime("%Y-%m-%d")
+            regime_s = e["regime"][:4]
+            lo_s = ",".join(e["long"])
+            sh_s = ",".join(e["short"])
+            # Truncate to fit terminal width
+            if len(lo_s) > 53:
+                lo_s = lo_s[:50] + "..."
+            if len(sh_s) > 53:
+                sh_s = sh_s[:50] + "..."
+            print(f"  {date_s:<12} {regime_s:<8} {lo_s:<55} {sh_s}")
+
+    print("=" * 78)
+
 
 # ===========================================================================
 #  STEP 7 -- Plots
@@ -854,7 +954,7 @@ def plot_results(res: dict) -> None:
                              gridspec_kw={"height_ratios": [3, 2, 1.5]})
     fig.suptitle(
         "Supply-Dilution L/S v7 | Monthly rebal | Sideways=cash | No BTC hedge\n"
-        "Momentum veto on shorts | 3-layer signal (4w+13w+52w) | Bull short=0.20x",
+        "Momentum veto on shorts | 2-layer signal (13w+52w) | Symmetric (0.75L, 0.75S)",
         fontsize=11, fontweight="bold")
 
     ax = axes[0]
@@ -1005,7 +1105,7 @@ def main():
     print("=" * 78)
     print("Supply-Dilution L/S Strategy -- Version 7")
     print("Monthly rebal | Sideways=cash | No BTC hedge | Momentum veto on shorts")
-    print("3-layer signal (4w+13w+52w) | Bull short=0.20x | 2x ADTV floor for shorts")
+    print("2-layer signal (13w+52w) | Symmetric (0.75L, 0.75S) | 2x ADTV floor for shorts")
     print("=" * 78)
 
     df = load_cmc(INPUT_FILE)
