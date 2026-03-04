@@ -1,7 +1,15 @@
 """
-perpetual_ls_v7.py
+perpetual_ls_v7.py  (defaults updated to v8 parameters)
 ==================
-Supply-Dilution L/S Strategy -- Version 7
+Supply-Dilution L/S Strategy -- Version 7/8
+
+v8 parameter changes vs v7 baseline:
+  SUPPLY_WINDOW = 26 (was 13)   — slower fast signal, less noise
+  BULL_BAND     = 1.05 (was 1.10) — tighter regime band → more Bull periods
+  BEAR_BAND     = 0.95 (was 0.90) — tighter regime band → more Bear periods
+  LONG_QUALITY_LOOKBACK = 12 (was 6) — longer quality veto lookback
+  Combined net ann: +13.93% | Sharpe: +0.765 | MaxDD: -14.46%
+
 
 Key improvements over v6 (fixes all diagnosed structural failures):
 
@@ -91,7 +99,7 @@ MIN_SUPPLY_HISTORY   = 26
 FFILL_LIMIT          = 1
 
 # Signal (2-layer, unchanged from v4/v6)
-SUPPLY_WINDOW        = 13
+SUPPLY_WINDOW        = 26               # v8: 26w fast window (was 13)
 SUPPLY_WINDOW_SLOW   = 52
 SIGNAL_SLOW_WEIGHT   = 0.50
 SUPPLY_INF_WINS      = (0.02, 0.98)
@@ -114,8 +122,8 @@ MAX_SLIPPAGE         = 0.02
 
 # Regime
 REGIME_MA_WINDOW     = 20
-BULL_BAND            = 1.10
-BEAR_BAND            = 0.90
+BULL_BAND            = 1.05             # v8: tighter band (was 1.10)
+BEAR_BAND            = 0.95             # v8: tighter band (was 0.90)
 HIGH_VOL_THRESHOLD   = 0.80
 VOL_WINDOW           = 8
 
@@ -143,13 +151,17 @@ MOMENTUM_VETO_PCT    = 0.50   # percentile threshold within short candidate pool
 # by BTC-relative 6m return. Dying tokens (NEO, THETA) consistently underperform BTC
 # regardless of their genuinely low supply inflation. Applied to both entry and stay.
 LONG_QUALITY_VETO_PCT      = 0.33   # veto bottom 33% by BTC-relative 6m return within long pool
-LONG_QUALITY_LOOKBACK      = 6      # months lookback (6 monthly rebalancing periods)
+LONG_QUALITY_LOOKBACK      = 12     # v8: 12m lookback (was 6)
 
 # Short squeeze / CB (unchanged)
 SHORT_SQUEEZE_PRIOR  = 0.40
 SHORT_CB_LOSS        = 0.40
 
-START_DATE  = pd.Timestamp("2022-01-01")
+START_DATE   = pd.Timestamp("2022-01-01")
+END_DATE     = None          # if set, only periods <= END_DATE are traded
+PERMUTE_SEED = -1            # if >= 0, shuffles pct_rank across symbols each period
+ZERO_FUNDING = False         # if True, zeros all funding rates (isolates signal alpha)
+SAVE_BASKET_LOG = ""         # if non-empty, saves per-period CSV to this path
 WINS_LOW    = 0.01
 WINS_HIGH   = 0.99
 
@@ -440,6 +452,8 @@ def run_backtest(df: pd.DataFrame, regime_df: pd.DataFrame,
 
     # [V7-1] Always monthly rebalancing (no regime-aware step skipping)
     sorted_rebals = [d for d in all_rebal if d >= START_DATE] if START_DATE else all_rebal
+    if END_DATE is not None:
+        sorted_rebals = [d for d in sorted_rebals if d <= END_DATE]
 
     # State
     prev_long_set  = set()
@@ -510,6 +524,13 @@ def run_backtest(df: pd.DataFrame, regime_df: pd.DataFrame,
         univ["rank_52w"] = univ["rank_52w"].fillna(univ["rank_13w"])
         univ["pct_rank"] = ((1 - SIGNAL_SLOW_WEIGHT) * univ["rank_13w"]
                           + SIGNAL_SLOW_WEIGHT        * univ["rank_52w"])
+
+        # Permutation test hook: shuffle pct_rank across symbols (destroys signal)
+        if PERMUTE_SEED >= 0:
+            rng = np.random.default_rng(PERMUTE_SEED + i)
+            vals = univ["pct_rank"].values.copy()
+            rng.shuffle(vals)
+            univ["pct_rank"] = vals
 
         rank_map = univ.set_index("symbol")["pct_rank"].to_dict()
         all_syms = set(univ["symbol"])
@@ -714,8 +735,9 @@ def run_backtest(df: pd.DataFrame, regime_df: pd.DataFrame,
             ret    = sum(w[s] * float(fwd[s]) for s in syms)
             slip   = sum(w[s] * float(sl_row.get(s, MAX_SLIPPAGE) or MAX_SLIPPAGE)
                          for s in syms)
-            fund_s = sum(w[s] * float(fund_row[s] if s in fund_row.index and
-                                      pd.notna(fund_row[s]) else 0.0) for s in syms)
+            fund_s = 0.0 if ZERO_FUNDING else sum(
+                w[s] * float(fund_row[s] if s in fund_row.index and
+                             pd.notna(fund_row[s]) else 0.0) for s in syms)
             return float(ret), float(slip), float(fund_s)
 
         r_long_gross,  slip_long,  fund_long_basket  = basket_return(basket_long)
@@ -1180,6 +1202,26 @@ def main():
 
     print_report(results)
     plot_results(results)
+
+    if SAVE_BASKET_LOG:
+        bl  = results["basket_log"]
+        idx = results["dates"]
+        rows = []
+        for i, e in enumerate(bl):
+            rows.append({
+                "date":         e["date"],
+                "regime":       e["regime"],
+                "long_basket":  "|".join(sorted(e["long"])),
+                "short_basket": "|".join(sorted(e["short"])),
+                "long_gross":   results["long_gross"].iloc[i]  if i < len(results["long_gross"])  else float("nan"),
+                "short_gross":  results["short_gross"].iloc[i] if i < len(results["short_gross"]) else float("nan"),
+                "combined_net": results["combined_net"].iloc[i] if i < len(results["combined_net"]) else float("nan"),
+                "fund_long":    results["fund_actual_long"][i]  if i < len(results["fund_actual_long"])  else float("nan"),
+                "fund_short":   results["fund_actual_short"][i] if i < len(results["fund_actual_short"]) else float("nan"),
+            })
+        pd.DataFrame(rows).to_csv(SAVE_BASKET_LOG, index=False)
+        print(f"[Log] Basket log saved: {SAVE_BASKET_LOG}")
+
     print("\nDone.")
 
 
