@@ -138,6 +138,12 @@ ALTSEASON_LOOKBACK   = 4
 # [V7-4/V7-5] Momentum veto: within short candidate pool, veto top 50% by 1m return
 MOMENTUM_VETO_PCT    = 0.50   # percentile threshold within short candidate pool
 
+# [V7-9] Long quality veto: within long candidate pool, remove bottom LONG_QUALITY_VETO_PCT
+# by BTC-relative 6m return. Dying tokens (NEO, THETA) consistently underperform BTC
+# regardless of their genuinely low supply inflation. Applied to both entry and stay.
+LONG_QUALITY_VETO_PCT      = 0.33   # veto bottom 33% by BTC-relative 6m return within long pool
+LONG_QUALITY_LOOKBACK      = 6      # months lookback (6 monthly rebalancing periods)
+
 # Short squeeze / CB (unchanged)
 SHORT_SQUEEZE_PRIOR  = 0.40
 SHORT_CB_LOSS        = 0.40
@@ -356,9 +362,16 @@ def build_regime(df: pd.DataFrame) -> pd.DataFrame:
 def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     grp = df.groupby("symbol", group_keys=False)
 
-    df["supply_inf_13w"] = grp["circulating_supply"].transform(
+    # Use market_cap / price as the supply proxy.
+    # The raw circulating_supply column from CMC is corrupted for ~64% of the
+    # investable universe (median error up to 85x, peak errors up to 3M x for
+    # tokens like ATOM, VET, COMP, XLM). The derived supply = market_cap / price
+    # is consistent and subject only to ~1% price/mcap reporting-lag noise.
+    df["supply_derived"] = df["market_cap"] / df["price"]
+
+    df["supply_inf_13w"] = grp["supply_derived"].transform(
         lambda s: s.pct_change(SUPPLY_WINDOW))
-    df["supply_inf_52w"] = grp["circulating_supply"].transform(
+    df["supply_inf_52w"] = grp["supply_derived"].transform(
         lambda s: s.pct_change(SUPPLY_WINDOW_SLOW))
     df["supply_inf"] = df["supply_inf_13w"]
 
@@ -449,8 +462,9 @@ def run_backtest(df: pd.DataFrame, regime_df: pd.DataFrame,
     fund_short_cum = 0.0
 
     # Basket composition log and trade count accumulators
-    basket_log         = []
-    total_long_opens   = 0
+    basket_log           = []
+    total_long_opens     = 0
+    long_quality_veto_count = 0
     total_long_closes  = 0
     total_short_opens  = 0
     total_short_closes = 0
@@ -525,7 +539,43 @@ def run_backtest(df: pd.DataFrame, regime_df: pd.DataFrame,
         # Build long and short baskets using data-driven quantile thresholds
         entry_long   = {s for s in all_syms if rank_map[s] <= long_thresh}
         stay_long    = {s for s in (prev_long_set & all_syms) if rank_map[s] <= long_exit_t}
-        basket_long  = entry_long | stay_long
+
+        # [V7-9] Long quality veto: within (entry_long | stay_long), veto the bottom
+        # LONG_QUALITY_VETO_PCT by BTC-relative 6m return. Dying tokens (NEO, THETA)
+        # underperform BTC consistently in both Bull (don't rally) and Bear (fall harder).
+        # Applied to BOTH entry and stay positions so zombies can't persist indefinitely.
+        long_quality_vetoed = set()
+        all_long_candidates = entry_long | stay_long
+        if i >= LONG_QUALITY_LOOKBACK and len(all_long_candidates) > MIN_BASKET_SIZE:
+            t_6m = sorted_rebals[i - LONG_QUALITY_LOOKBACK]
+            if t_6m in bn_price_piv.index and t0 in bn_price_piv.index:
+                p_6m_bn  = bn_price_piv.loc[t_6m]
+                p_now_bn = bn_price_piv.loc[t0]
+                btc_6m_ret = np.nan
+                if ("BTC" in p_6m_bn and pd.notna(p_6m_bn["BTC"]) and
+                        float(p_6m_bn["BTC"]) > 0 and "BTC" in p_now_bn and
+                        pd.notna(p_now_bn["BTC"])):
+                    btc_6m_ret = float(p_now_bn["BTC"]) / float(p_6m_bn["BTC"]) - 1
+                long_btc_alpha = {}
+                for s in all_long_candidates:
+                    p0l = float(p_6m_bn[s])  if (s in p_6m_bn  and pd.notna(p_6m_bn[s]))  else np.nan
+                    p1l = float(p_now_bn[s]) if (s in p_now_bn and pd.notna(p_now_bn[s])) else np.nan
+                    if pd.notna(p0l) and p0l > 0 and pd.notna(p1l):
+                        tok_ret = p1l / p0l - 1
+                        long_btc_alpha[s] = (tok_ret - btc_6m_ret
+                                             if pd.notna(btc_6m_ret) else tok_ret)
+                if len(long_btc_alpha) >= MIN_BASKET_SIZE:
+                    lo_thresh = np.percentile(list(long_btc_alpha.values()),
+                                              LONG_QUALITY_VETO_PCT * 100)
+                    candidates_vetoed = {s for s, r in long_btc_alpha.items() if r < lo_thresh}
+                    remaining = all_long_candidates - candidates_vetoed
+                    if len(remaining) >= MIN_BASKET_SIZE:
+                        long_quality_vetoed = candidates_vetoed
+                        long_quality_veto_count += len(long_quality_vetoed)
+
+        entry_long  = entry_long  - long_quality_vetoed
+        stay_long   = stay_long   - long_quality_vetoed
+        basket_long = entry_long  | stay_long
 
         # Initial short candidate pool (supply signal + squeeze filter)
         entry_short_raw = {s for s in all_syms if rank_map[s] >= short_thresh} - squeezed
@@ -727,7 +777,8 @@ def run_backtest(df: pd.DataFrame, regime_df: pd.DataFrame,
         fund_actual_short = fund_actual_short_l,
         cb_count          = cb_count,
         altseason_count   = altseason_count,
-        momentum_veto_count = momentum_veto_count,
+        momentum_veto_count      = momentum_veto_count,
+        long_quality_veto_count  = long_quality_veto_count,
         turnover_long     = turnover_long_l,
         turnover_short    = turnover_short_l,
         basket_log        = basket_log,
@@ -768,7 +819,8 @@ def print_report(res: dict) -> None:
     print(f"  Avg effective scale : Long {avg_ls[0]:.2f}x / Short {avg_ls[1]:.2f}x")
     print(f"  CB triggered        : {res['cb_count']} period(s)")
     print(f"  Alt-season veto     : {res['altseason_count']} period(s)")
-    print(f"  Momentum veto (tot) : {res['momentum_veto_count']} token-periods removed")
+    print(f"  Momentum veto (tot) : {res['momentum_veto_count']} token-periods removed (shorts)")
+    print(f"  Long quality veto   : {res.get('long_quality_veto_count',0)} token-periods removed (longs)")
     if res["turnover_long"]:
         print(f"  Avg monthly turnover: Long {np.mean(res['turnover_long']):.1%}  "
               f"Short {np.mean(res['turnover_short']):.1%}")
