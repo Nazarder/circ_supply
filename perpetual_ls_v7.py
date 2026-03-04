@@ -103,6 +103,7 @@ SHORT_ENTRY_PCT      = 0.88
 SHORT_EXIT_PCT       = 0.82
 MIN_BASKET_SIZE      = 6
 ADTV_POS_CAP         = 0.20
+WEIGHT_SCHEME        = "equal"   # "inv_vol" | "equal"
 TOKEN_VOL_WINDOW     = 8
 
 # Execution
@@ -706,7 +707,10 @@ def run_backtest(df: pd.DataFrame, regime_df: pd.DataFrame,
                       for s in syms}
             adtv_m = {s: float(adtv_row.get(s, 0)  if pd.notna(adtv_row.get(s))  else 0.0)
                       for s in syms}
-            w      = inv_vol_adtv_weights(syms, vol_m, adtv_m)
+            if WEIGHT_SCHEME == "equal":
+                n = len(syms); w = {s: 1/n for s in syms}
+            else:
+                w = inv_vol_adtv_weights(syms, vol_m, adtv_m)
             ret    = sum(w[s] * float(fwd[s]) for s in syms)
             slip   = sum(w[s] * float(sl_row.get(s, MAX_SLIPPAGE) or MAX_SLIPPAGE)
                          for s in syms)
