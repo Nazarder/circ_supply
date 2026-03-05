@@ -1,0 +1,112 @@
+
+========================================================================
+OVERFITTING CONFIRMATION TESTS — v7 vs v8 parameter changes
+========================================================================
+
+========================================================================
+TEST A — Sub-period Stability
+Does v8 beat v7 in BOTH halves, or only the half it was tuned on?
+  First half  (IS-like) : 2022-01-01 → 2023-12-31
+  Second half (OOS-like): 2024-01-01 → 2026-02-01
+========================================================================
+
+  Config                 Period              SR      Ann    MaxDD    N
+  --------------------------------------------------------------
+  v7 baseline            Full 2022-2026 +0.200    +3.47%   -16.67%    45
+  v7 baseline            First  half IS  +0.415    +5.73%    -6.95%    20
+  v7 baseline            Second half OOS +0.193    +3.71%   -17.10%    24
+
+  v8 current             Full 2022-2026 +0.765   +12.99%   -14.46%    45
+  v8 current             First  half IS  +0.887   +15.54%    -4.72%    20
+  v8 current             Second half OOS +0.782   +14.27%   -14.46%    24
+
+  v8 vs v7 in IS  half : v8 WINS  (Δ=+0.472)
+  v8 vs v7 in OOS half : v8 WINS  (Δ=+0.589)
+
+  Verdict: v8 WINS BOTH halves → improvement is likely GENUINE,
+  not specific to the IS window.
+
+========================================================================
+TEST B — Parameter Neighbourhood Robustness
+Is v8 on a flat plateau (robust) or a sharp peak (overfit)?
+Grid: SUPPLY_WINDOW × BULL/BEAR bands (symmetric)
+========================================================================
+
+    SW  B=1.03/0.97  B=1.05/0.95  B=1.07/0.93  B=1.10/0.90
+  --------------------------------------------------------
+    13w   +0.476      13w   +0.476    +0.429      13w   +0.476    +0.429    +0.235      13w   +0.476    +0.429    +0.235    +0.244      13w   +0.476    +0.429    +0.235    +0.244  
+    20w   +0.202      20w   +0.202    +0.146      20w   +0.202    +0.146    -0.080      20w   +0.202    +0.146    -0.080    -0.040      20w   +0.202    +0.146    -0.080    -0.040  
+    26w   +0.802      26w   +0.802    +0.765 *    26w   +0.802    +0.765 *  +0.584      26w   +0.802    +0.765 *  +0.584    +0.556      26w   +0.802    +0.765 *  +0.584    +0.556  
+    32w   +1.035      32w   +1.035    +1.032      32w   +1.035    +1.032    +0.872      32w   +1.035    +1.032    +0.872    +0.847      32w   +1.035    +1.032    +0.872    +0.847  
+    40w   +0.683      40w   +0.683    +0.705      40w   +0.683    +0.705    +0.482      40w   +0.683    +0.705    +0.482    +0.504      40w   +0.683    +0.705    +0.482    +0.504  
+
+  (* = v8 default)
+
+  v8 (26w, 1.05/0.95)  SR = +0.765
+  Grid maximum         SR = +1.035  at SW=32w, BULL=1.03
+  v8 rank in grid      : 6 / 20
+  Grid points within ±0.10 SR of v8 : 5 / 20  (peak)
+  Grid points > v8 + 0.05            : 4 / 20
+
+  Verdict: MULTIPLE configs outperform v8 significantly.
+  v8 is NOT the optimum — but the improvement direction (longer SW)
+  should still be visible across the grid.
+
+========================================================================
+TEST C — LONG_QUALITY_LOOKBACK Sensitivity
+Is 12 months a genuine optimum or a lucky IS peak?
+All other params at v8 defaults.
+========================================================================
+
+    Lookback        SR      Ann    MaxDD      dSR
+  --------------------------------------------------
+          3m   +0.302    +5.05%   -21.69%    (base)
+          6m   +0.426    +6.77%   -16.48%   +0.124
+          9m   +0.473    +8.32%   -18.38%   +0.171
+         12m *   +0.765   +12.99%   -14.46%   +0.463
+         18m   +0.594   +11.29%   -14.36%   +0.292
+         24m   +0.663   +12.47%   -17.92%   +0.361
+
+  (* = v8 default of 12 months)
+  Flat curve → lookback value doesn't matter (non-issue).
+  Sharp peak at 12 → suspect overfit.
+
+========================================================================
+TEST D — IS-only Parameter Selection → OOS Test
+  IS window : 2022-01-01 → 2023-12-31
+  OOS window: 2024-01-01 → 2026-02-01
+  Step 1: grid-search SUPPLY_WINDOW × BANDS on IS only
+  Step 2: take the IS winner, test it on OOS
+  Step 3: compare IS-winner(OOS) vs v7(OOS) vs v8(OOS)
+========================================================================
+
+  --- IS Grid Search ---
+  Config                  IS SR   IS Ann  IS N
+  ----------------------------------------------
+  SW13 B1.10/0.90       +0.415    +5.73%     20
+  SW13 B1.05/0.95       +0.636    +9.43%     20
+  SW26 B1.10/0.90       +0.362    +5.05%     20
+  SW26 B1.05/0.95       +0.598    +8.84%     20
+  SW40 B1.10/0.90       +0.543    +6.25%     20
+  SW40 B1.05/0.95       +0.852   +11.03%     20
+
+  IS winner: SW40 B1.05/0.95  (IS SR=+0.852)
+
+  --- OOS Comparison ---
+  Config                       OOS SR  OOS Ann  OOS N
+  ----------------------------------------------------
+  v7 baseline                 +0.193    +3.71%      24
+  v8 current                  +0.782   +14.27%      24
+  IS winner (SW40 B1.05/0.95)  +0.734   +28.39%      23
+
+  v8 vs v7 on OOS     : +0.589 SR
+  IS-winner vs v7 OOS : +0.541 SR
+  IS-winner vs v8 OOS : -0.048 SR
+
+  Verdict: IS-selected params BEAT v7 on OOS.
+  The parameter improvement direction generalises out-of-sample.
+  This is evidence AGAINST pure overfitting.
+
+========================================================================
+All tests complete in 4.1 min.
+========================================================================
