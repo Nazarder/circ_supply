@@ -7,7 +7,7 @@ circulating supply inflation and future token returns. Tokens with persistently 
 inflation are bought; tokens with persistently high supply inflation are shorted.
 Execution uses Binance USDT-M perpetual futures with actual funding rates and ADTV constraints.
 
-**Current default parameters: v8** (BULL_BAND=1.05, BEAR_BAND=0.95, SUPPLY_WINDOW=26, LONG_QUALITY_LOOKBACK=12)
+**Current default parameters: v9** (BULL_BAND=1.05, BEAR_BAND=0.95, SUPPLY_WINDOW=32, LONG_QUALITY_LOOKBACK=32 tied, no vetoes)
 
 ---
 
@@ -22,6 +22,8 @@ Execution uses Binance USDT-M perpetual futures with actual funding rates and AD
 
 **Supply proxy**: `market_cap / price` (robust to CMC raw circulating supply corruption — avoids
 sudden step changes introduced by data source re-classifications).
+
+**Data freshness**: CMC dataset covers 2017-01-01 to 2026-02-22 (135,639 rows, 2,266 symbols). Binance perp price/funding data covers 396 USDT-M symbols with 322 weekly closes and 51,346 funding rate observations.
 
 ---
 
@@ -45,7 +47,7 @@ Typical investable universe: 60–110 tokens per month.
 **2-layer supply inflation signal** (unchanged from v4/v6):
 
 ```
-supply_change_fast = (supply_t / supply_{t-26w}) - 1   # 26-week window (v8; was 13w in v7)
+supply_change_fast = (supply_t / supply_{t-32w}) - 1   # 32-week window (v9; was 26w in v8, 13w in v7)
 supply_change_slow = (supply_t / supply_{t-52w}) - 1   # 52-week window
 
 rank_fast = cross_sectional_rank(supply_change_fast)   # 0..1 within universe
@@ -61,9 +63,10 @@ pct_rank = winsorize(0.50 * rank_fast + 0.50 * rank_slow, 2%, 98%)
 temporarily quiet 4-week window but high 26w/52w inflation were incorrectly promoted into the
 long basket. The 2-layer signal is retained as the cleanest version.
 
-**Why 26w fast window** (v8 change): The 13w fast window added noise — supply changes over a
-single quarter are more susceptible to temporary pauses or bursts. The 26w window smooths this
-without sacrificing timeliness.
+**Why 32w fast window** (v9): Neighbourhood grid (Section 18) shows SW=32 dominates SW=26 by +0.27
+Sharpe. Walk-forward IS selection consistently picks 32-40w across all 5 OOS folds (Section 23).
+OOS SR beats IS SR with SW=32 — the opposite of overfitting. The 32w window captures structural
+supply inflation dynamics, smoothing out quarterly noise while remaining faster than the 52w layer.
 
 ---
 
@@ -701,9 +704,9 @@ all trending conditions, not regime-specific alpha.
 
 | Chart | Description |
 |-------|-------------|
-| `perp_ls_v7_cumulative.png` | 3-panel: cumulative wealth (log), net NAV, per-period spread bars |
-| `perp_ls_v7_regime_dd.png` | Drawdown + per-period regime spread |
-| `perp_ls_v8_vs_v7.png` | v7 baseline vs v8 scorecard (geo spread by regime, NAV, drawdown, table) |
+| `perp_ls_v9_cumulative.png` | 3-panel: cumulative wealth (log), net NAV, per-period spread bars |
+| `perp_ls_v9_regime_dd.png` | Drawdown + per-period regime spread |
+| `perp_ls_v9_vs_v8.png` | v8 baseline vs v9 scorecard (geo spread by regime, NAV, drawdown, table) |
 | `perp_ls_v8_dashboard.png` | Dark-mode dashboard: NAV, drawdown, spreads, rolling 12m Sharpe, stats |
 | `perp_ls_v8_slippage.png` | Sharpe and Ann. Return vs slippage coefficient k |
 | `perp_ls_v8_walkforward.png` | Walk-forward bar chart (6 folds × 3 configs) |
@@ -713,20 +716,29 @@ all trending conditions, not regime-specific alpha.
 
 ## 22. Version Comparison
 
-| Metric | v4 | v6 | v7 baseline | v8 (current) |
-|--------|----|----|------------|--------------|
-| Combined net ann. | −5.1% | +0.1% | +4.0% | **+13.0%** |
-| MaxDD | −22.9% | −19.2% | −20.7% | **−14.5%** |
-| Sharpe | −0.222 | +0.003 | +0.220 | **+0.765** |
-| Win rate (spread) | 48.0% | 52.6% | 53.3% | **60.0%** |
-| Mean period spread | +1.95% | +3.34% | +3.44% | **+3.44%** |
-| Bull geo spread | +21.1% | +51.9% | +18.7% | **+63.9%** |
-| Bear geo spread | +48.1% | +53.3% | +81.9% | **+40.5%** |
+| Metric | v4 | v6 | v7 baseline | v8 | v9 (current) |
+|--------|----|----|------------|----|----|
+| Combined net ann. | −5.1% | +0.1% | +4.0% | +13.0% | **+17.1%** |
+| MaxDD | −22.9% | −19.2% | −20.7% | −14.5% | **−13.1%** |
+| Sharpe | −0.222 | +0.003 | +0.220 | +0.765 | **+0.966** |
+| Win rate (spread) | 48.0% | 52.6% | 53.3% | 60.0% | **55.6%** |
+| Mean period spread | +1.95% | +3.34% | +3.44% | +3.44% | **+4.23%** |
+| Bull geo spread | +21.1% | +51.9% | +18.7% | +63.9% | **+76.3%** |
+| Bear geo spread | +48.1% | +53.3% | +81.9% | +40.5% | **+64.7%** |
+| Net funding | — | — | −8.68% | −8.68% | **+2.03%** |
+| Free parameters | ~16 | ~16 | ~16 | ~19 | **~15** |
 
 Key v8 changes vs v7 baseline:
 - `SUPPLY_WINDOW` 13→26 (slower fast signal, ~60% of improvement)
 - `BULL_BAND`/`BEAR_BAND` 1.10/0.90→1.05/0.95 (more active periods, ~30%)
 - `LONG_QUALITY_LOOKBACK` 6→12 months (longer quality veto lookback, ~10%)
+
+Key v9 changes vs v8 (de-overfitting — Section 23):
+- `SUPPLY_WINDOW` 26→32 (grid-dominant window, walk-forward consistently selects 32-40w)
+- `LONG_QUALITY_LOOKBACK` 12→32 (tied to `SUPPLY_WINDOW`; removes IS-specific free param)
+- Momentum veto OFF (confirmed 0.000 ablation dSharpe; dead weight)
+- Long quality veto OFF (weakest veto; 32w signal window subsumes its function)
+- Net result: −4 free parameters, OOS SR (+1.065) > IS SR (+0.881)
 
 ---
 

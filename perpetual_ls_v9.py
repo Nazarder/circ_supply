@@ -823,13 +823,13 @@ def run_backtest(df: pd.DataFrame, regime_df: pd.DataFrame,
 
 def print_report(res: dict) -> None:
     print("\n" + "=" * 78)
-    print("PERPETUAL L/S BACKTEST v7")
-    print("  Signal : 50% rank(13w) + 50% rank(52w), winsorised 2-98pct")
+    print("PERPETUAL L/S BACKTEST v9 (de-overfit)")
+    print("  Signal : 50% rank(32w) + 50% rank(52w), winsorised 2-98pct")
     print("  Prices : Binance USDT-M weekly perp close")
     print("  Funding: Actual 8h Binance funding rates")
     print("  Rebal  : Monthly always (no regime-aware stepping)")
     print("  Regime : Sideways=cash | Bull=(0.75L, 0.75S) symmetric | Bear=(0.75L, 0.75S)")
-    print("  Shorts : Momentum veto (top-50pct 1m return within candidate pool excluded)")
+    print("  Vetoes : None (momentum veto OFF, long quality veto OFF)")
     print("  Hedge  : None (BTC beta hedge removed)")
     print("=" * 78)
 
@@ -902,46 +902,49 @@ def print_report(res: dict) -> None:
         print(f"  Avg period long funding drag    : {np.mean(fl):+.4f} ({np.mean(fl):.2%})")
         print(f"  Avg period short funding credit : {np.mean(fs):+.4f} ({np.mean(fs):.2%})")
 
-    # v4 vs v6 vs v7 comparison
+    # v4 / v6 / v7 / v8 / v9 comparison
     V4 = dict(combined_ann=-0.0511, combined_dd=-0.2289, sharpe=-0.222,
               win_rate=0.48,  mean_spread=0.0195,
               bear_geo=0.481, bull_geo=0.211, side_geo=-0.145)
     V6 = dict(combined_ann=+0.0010, combined_dd=-0.1922, sharpe=+0.003,
               win_rate=0.526, mean_spread=0.0334,
               bear_geo=0.5334, bull_geo=0.5191, side_geo=0.0134)
+    V8 = dict(combined_ann=+0.1299, combined_dd=-0.1446, sharpe=+0.765,
+              win_rate=0.600, mean_spread=0.0344,
+              bear_geo=0.4050, bull_geo=0.6390, side_geo=0.0000)
 
-    st7 = portfolio_stats(res["combined_net"])
-    v7_geo = {}
+    st9 = portfolio_stats(res["combined_net"])
+    v9_geo = {}
     for reg in ["Bull", "Bear", "Sideways"]:
         mask = regs == reg
         sub  = sp.iloc[list(np.where(mask)[0])]
-        v7_geo[reg] = ((1 + sub.clip(lower=-0.99)).prod() ** (12/len(sub)) - 1
+        v9_geo[reg] = ((1 + sub.clip(lower=-0.99)).prod() ** (12/len(sub)) - 1
                        if len(sub) > 0 else np.nan)
 
     def _f(v, fmt="+.1%"):
         return f"{v:{fmt}}" if not np.isnan(v) else "  N/A"
 
-    print(f"\n  --- v4 / v6 / v7 Comparison ---")
-    print(f"  {'Metric':<28} {'v4 (base)':>10} {'v6':>10} {'v7':>10}")
-    print(f"  {'-'*60}")
+    print(f"\n  --- v4 / v6 / v8 / v9 Comparison ---")
+    print(f"  {'Metric':<28} {'v4 (base)':>10} {'v6':>10} {'v8':>10} {'v9':>10}")
+    print(f"  {'-'*70}")
     print(f"  {'Combined net (ann.)':<28} {_f(V4['combined_ann']):>10} "
-          f"{_f(V6['combined_ann']):>10} {_f(st7['ann_return']):>10}")
+          f"{_f(V6['combined_ann']):>10} {_f(V8['combined_ann']):>10} {_f(st9['ann_return']):>10}")
     print(f"  {'MaxDD':<28} {_f(V4['combined_dd']):>10} "
-          f"{_f(V6['combined_dd']):>10} {_f(st7['max_dd']):>10}")
+          f"{_f(V6['combined_dd']):>10} {_f(V8['combined_dd']):>10} {_f(st9['max_dd']):>10}")
     print(f"  {'Sharpe':<28} {V4['sharpe']:>+10.3f} {V6['sharpe']:>+10.3f} "
-          f"{_f(st7['sharpe'], '+.3f'):>10}")
+          f"{V8['sharpe']:>+10.3f} {_f(st9['sharpe'], '+.3f'):>10}")
     print(f"  {'Win rate (spread)':<28} {V4['win_rate']:>10.1%} {V6['win_rate']:>10.1%} "
-          f"{(sp>0).mean():>10.1%}")
+          f"{V8['win_rate']:>10.1%} {(sp>0).mean():>10.1%}")
     print(f"  {'Mean period spread':<28} {V4['mean_spread']:>+10.2%} "
-          f"{V6['mean_spread']:>+10.2%} {sp.mean():>+10.2%}")
+          f"{V6['mean_spread']:>+10.2%} {V8['mean_spread']:>+10.2%} {sp.mean():>+10.2%}")
     print(f"  {'Bear geo spread':<28} {_f(V4['bear_geo']):>10} "
-          f"{_f(V6['bear_geo']):>10} {_f(v7_geo.get('Bear', float('nan'))):>10}")
+          f"{_f(V6['bear_geo']):>10} {_f(V8['bear_geo']):>10} {_f(v9_geo.get('Bear', float('nan'))):>10}")
     print(f"  {'Bull geo spread':<28} {_f(V4['bull_geo']):>10} "
-          f"{_f(V6['bull_geo']):>10} {_f(v7_geo.get('Bull', float('nan'))):>10}")
-    side_v7 = ("(skip)" if np.isnan(v7_geo.get("Sideways", float("nan"))) else
-                _f(v7_geo.get("Sideways", float("nan"))))
+          f"{_f(V6['bull_geo']):>10} {_f(V8['bull_geo']):>10} {_f(v9_geo.get('Bull', float('nan'))):>10}")
+    side_v9 = ("(skip)" if np.isnan(v9_geo.get("Sideways", float("nan"))) else
+                _f(v9_geo.get("Sideways", float("nan"))))
     print(f"  {'Sideways geo spread':<28} {_f(V4['side_geo']):>10} "
-          f"{_f(V6['side_geo']):>10} {side_v7:>10}")
+          f"{_f(V6['side_geo']):>10} {_f(V8['side_geo']):>10} {side_v9:>10}")
     print("=" * 78)
 
     # --- Trade Counts ---
@@ -1033,8 +1036,8 @@ def plot_results(res: dict) -> None:
     fig, axes = plt.subplots(3, 1, figsize=(13, 13),
                              gridspec_kw={"height_ratios": [3, 2, 1.5]})
     fig.suptitle(
-        "Supply-Dilution L/S v7 | Monthly rebal | Sideways=cash | No BTC hedge\n"
-        "Momentum veto on shorts | 2-layer signal (13w+52w) | Symmetric (0.75L, 0.75S)",
+        "Supply-Dilution L/S v9 | Monthly rebal | Sideways=cash | No BTC hedge\n"
+        "No vetoes | 2-layer signal (32w+52w) | Symmetric (0.75L, 0.75S) | De-overfit",
         fontsize=11, fontweight="bold")
 
     ax = axes[0]
@@ -1072,7 +1075,7 @@ def plot_results(res: dict) -> None:
     ax3.set_title("Per-Period Gross Spread by Regime")
     ax3.grid(True, alpha=0.2)
     fig.tight_layout()
-    out1 = OUTPUT_DIR + "perp_ls_v7_cumulative.png"
+    out1 = OUTPUT_DIR + "perp_ls_v9_cumulative.png"
     fig.savefig(out1, dpi=150); plt.close(fig)
     print(f"[Plot] {out1}")
 
@@ -1096,53 +1099,53 @@ def plot_results(res: dict) -> None:
     ax5.set_title("Drawdown: v7 Combined Net")
     ax5.legend(fontsize=9); ax5.grid(True, alpha=0.2)
     fig2.tight_layout()
-    out2 = OUTPUT_DIR + "perp_ls_v7_regime_dd.png"
+    out2 = OUTPUT_DIR + "perp_ls_v9_regime_dd.png"
     fig2.savefig(out2, dpi=150); plt.close(fig2)
     print(f"[Plot] {out2}")
 
-    # Figure 3: v7 baseline vs v8 scorecard
-    V7_BASE = dict(
-        combined_ann=+0.0397, combined_dd=-0.2073, sharpe=+0.220,
-        win_rate=0.533, mean_spread=0.0344,
-        bull_geo=0.1871, bear_geo=0.8188, side_geo=0.0000,
+    # Figure 3: v8 baseline vs v9 scorecard (de-overfit comparison)
+    V8_BASE = dict(
+        combined_ann=+0.1299, combined_dd=-0.1446, sharpe=+0.765,
+        win_rate=0.600, mean_spread=0.0344,
+        bull_geo=0.6390, bear_geo=0.4050, side_geo=0.0000,
     )
-    st8 = portfolio_stats(res["combined_net"])
-    v8_geo = {}
+    st9 = portfolio_stats(res["combined_net"])
+    v9_geo = {}
     for regime in ["Bull", "Bear", "Sideways"]:
         mask = regs == regime
         sub  = sp.iloc[list(np.where(mask)[0])]
-        v8_geo[regime] = ((1 + sub.clip(lower=-0.99)).prod() ** (12/len(sub)) - 1
+        v9_geo[regime] = ((1 + sub.clip(lower=-0.99)).prod() ** (12/len(sub)) - 1
                           if len(sub) > 0 else np.nan)
 
     regimes_list = ["Bull", "Bear", "Sideways"]
     fig3, axes3 = plt.subplots(2, 2, figsize=(14, 10))
-    fig3.suptitle("v7 baseline vs v8 (supply window + band tuning) — Post-2022",
+    fig3.suptitle("v8 vs v9 (de-overfit: 32w signal, tied LQ, no vetoes) — Post-2022",
                   fontsize=13, fontweight="bold")
     x = np.arange(len(regimes_list)); w = 0.36
 
     ax6 = axes3[0, 0]
-    v7b_geos = [V7_BASE["bull_geo"], V7_BASE["bear_geo"], V7_BASE["side_geo"]]
-    v8_geos  = [v8_geo.get(r, 0) for r in regimes_list]
-    v8_geos_bar = [v if not np.isnan(v) else 0 for v in v8_geos]
-    ax6.bar(x - w/2, v7b_geos,   w, label="v7 baseline", color="silver",        edgecolor="black")
-    ax6.bar(x + w/2, v8_geos_bar, w, label="v8",          color="mediumseagreen", edgecolor="black")
+    v8b_geos = [V8_BASE["bull_geo"], V8_BASE["bear_geo"], V8_BASE["side_geo"]]
+    v9_geos  = [v9_geo.get(r, 0) for r in regimes_list]
+    v9_geos_bar = [v if not np.isnan(v) else 0 for v in v9_geos]
+    ax6.bar(x - w/2, v8b_geos,    w, label="v8 baseline", color="silver",        edgecolor="black")
+    ax6.bar(x + w/2, v9_geos_bar, w, label="v9",          color="mediumseagreen", edgecolor="black")
     ax6.axhline(0, color="black", lw=0.8)
     ax6.set_xticks(x); ax6.set_xticklabels(regimes_list)
     ax6.set_title("Ann. Geometric Spread by Regime"); ax6.set_ylabel("Geo. Spread")
     ax6.legend(fontsize=9); ax6.grid(True, alpha=0.2)
 
     ax7 = axes3[0, 1]
-    cum_v8 = (1 + res["combined_net"].dropna()).cumprod()
-    ax7.plot(cum_v8.index, cum_v8.values, "mediumseagreen", lw=2.5, label="v8 combined net")
+    cum_v9 = (1 + res["combined_net"].dropna()).cumprod()
+    ax7.plot(cum_v9.index, cum_v9.values, "mediumseagreen", lw=2.5, label="v9 combined net")
     ax7.axhline(1.0, color="black", lw=1.0, ls="--", label="Breakeven")
-    ax7.set_title("v8 Combined NAV"); ax7.set_ylabel("Cumulative Return")
+    ax7.set_title("v9 Combined NAV"); ax7.set_ylabel("Cumulative Return")
     ax7.legend(fontsize=9); ax7.grid(True, alpha=0.2)
 
     ax8 = axes3[1, 0]
-    dd = (cum_v8 - cum_v8.cummax()) / cum_v8.cummax()
-    ax8.fill_between(dd.index, dd.values, 0, color="mediumseagreen", alpha=0.55, label="v8")
+    dd = (cum_v9 - cum_v9.cummax()) / cum_v9.cummax()
+    ax8.fill_between(dd.index, dd.values, 0, color="mediumseagreen", alpha=0.55, label="v9")
     ax8.set_ylabel("Drawdown"); ax8.set_xlabel("Date")
-    ax8.set_title("Drawdown: v8 Combined Net")
+    ax8.set_title("Drawdown: v9 Combined Net")
     ax8.legend(fontsize=9); ax8.grid(True, alpha=0.2)
 
     ax9 = axes3[1, 1]
@@ -1152,14 +1155,14 @@ def plot_results(res: dict) -> None:
         return f"{v:{fmt}}" if not np.isnan(v) else "N/A"
 
     rows = [
-        ["Metric",              "v7 baseline",            "v8 (current)"],
-        ["Combined net (ann.)", _f(V7_BASE["combined_ann"]),  _f(st8["ann_return"])],
-        ["MaxDD",               _f(V7_BASE["combined_dd"]),   _f(st8["max_dd"])],
-        ["Sharpe",              f"{V7_BASE['sharpe']:+.3f}",  _f(st8["sharpe"], "+.3f")],
-        ["Win rate",            f"{V7_BASE['win_rate']:.1%}", f"{(sp>0).mean():.1%}"],
-        ["Mean spread",         _f(V7_BASE["mean_spread"],"+.2%"), _f(sp.mean(),"+.2%")],
-        ["Bear geo spread",     _f(V7_BASE["bear_geo"]),      _f(v8_geo.get("Bear", float("nan")))],
-        ["Bull geo spread",     _f(V7_BASE["bull_geo"]),      _f(v8_geo.get("Bull", float("nan")))],
+        ["Metric",              "v8 baseline",            "v9 (current)"],
+        ["Combined net (ann.)", _f(V8_BASE["combined_ann"]),  _f(st9["ann_return"])],
+        ["MaxDD",               _f(V8_BASE["combined_dd"]),   _f(st9["max_dd"])],
+        ["Sharpe",              f"{V8_BASE['sharpe']:+.3f}",  _f(st9["sharpe"], "+.3f")],
+        ["Win rate",            f"{V8_BASE['win_rate']:.1%}", f"{(sp>0).mean():.1%}"],
+        ["Mean spread",         _f(V8_BASE["mean_spread"],"+.2%"), _f(sp.mean(),"+.2%")],
+        ["Bear geo spread",     _f(V8_BASE["bear_geo"]),      _f(v9_geo.get("Bear", float("nan")))],
+        ["Bull geo spread",     _f(V8_BASE["bull_geo"]),      _f(v9_geo.get("Bull", float("nan")))],
         ["Sideways",            "cash (0%)",                  "cash (0%)"],
     ]
     tbl = ax9.table(cellText=rows[1:], colLabels=rows[0],
@@ -1169,10 +1172,10 @@ def plot_results(res: dict) -> None:
     for j in range(3):
         tbl[0, j].set_facecolor("#2c3e50")
         tbl[0, j].set_text_props(color="white", fontweight="bold")
-    ax9.set_title("v7 baseline vs v8 Scorecard", fontweight="bold", pad=14)
+    ax9.set_title("v8 baseline vs v9 Scorecard", fontweight="bold", pad=14)
 
     fig3.tight_layout()
-    out3 = OUTPUT_DIR + "perp_ls_v8_vs_v7.png"
+    out3 = OUTPUT_DIR + "perp_ls_v9_vs_v8.png"
     fig3.savefig(out3, dpi=150); plt.close(fig3)
     print(f"[Plot] {out3}")
 
@@ -1183,9 +1186,9 @@ def plot_results(res: dict) -> None:
 
 def main():
     print("=" * 78)
-    print("Supply-Dilution L/S Strategy -- Version 7")
-    print("Monthly rebal | Sideways=cash | No BTC hedge | Momentum veto on shorts")
-    print("2-layer signal (13w+52w) | Symmetric (0.75L, 0.75S) | 2x ADTV floor for shorts")
+    print("Supply-Dilution L/S Strategy -- Version 9 (de-overfit)")
+    print("Monthly rebal | Sideways=cash | No BTC hedge | No vetoes")
+    print("2-layer signal (32w+52w) | Symmetric (0.75L, 0.75S) | Bands 1.05/0.95")
     print("=" * 78)
 
     df = load_cmc(INPUT_FILE)
