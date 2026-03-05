@@ -1,0 +1,108 @@
+
+===========================================================================
+BLIND SPOTS & WEAK POINT TESTS — v8 Supply-Dilution L/S Strategy
+===========================================================================
+
+===========================================================================
+TEST 1 — Signal Dispersion Filter
+Does the supply signal only work when cross-sectional dispersion is high?
+===========================================================================
+  Basket log: 45 periods
+
+  Median 26w IQR across periods: 0.1070
+  High-dispersion half (N=23): Ann=+17.99%  SR=+1.123
+  Low-dispersion  half (N=22): Ann=+12.66%  SR=+0.664
+  Spearman(IQR, return): rho=-0.079  p=0.607
+
+  Finding: signal return is INDEPENDENT of dispersion level — the signal
+  fires uniformly regardless of how much cross-sectional spread exists.
+
+===========================================================================
+TEST 2 — 26w vs 52w Rank Correlation
+If the two signal layers are highly correlated, blending is cosmetic.
+===========================================================================
+  Dates sampled (monthly): 107
+  Spearman rank-corr(26w, 52w): mean=0.750  std=0.071  min=0.524  max=0.915
+  % of periods with corr > 0.80: 25.2%
+  % of periods with corr > 0.90: 0.9%
+
+  Finding: Moderately correlated (0.70-0.85). Some diversification value
+  but less than a two-factor model implies.
+
+===========================================================================
+TEST 3 — Slippage Sensitivity Sweep (SLIPPAGE_K)
+Baseline k=0.0005. Real execution may be 2x-10x higher.
+===========================================================================
+
+         k        Ann   Sharpe    MaxDD      dSR
+  --------------------------------------------------
+    0.0001    +20.87%   +1.225   -12.14%          
+    0.0005    +12.99%   +0.765   -14.46%   -0.460
+    0.0010     +8.14%   +0.482   -15.79%   -0.743
+    0.0020     +4.58%   +0.272   -16.74%   -0.953
+    0.0030     +3.49%   +0.208   -16.93%   -1.017
+    0.0050     +2.83%   +0.169   -17.02%   -1.056
+    0.0100     +2.54%   +0.152   -17.02%   -1.073
+
+  Interpretation: at what k does Sharpe drop below 0.5? Below 0.0?
+  k=0.001 = 2x current assumption | k=0.005 = 10x current assumption
+
+===========================================================================
+TEST 4 — Winsorisation Sensitivity
+Baseline: clip supply changes at 2nd/98th pct. Extreme inflators may be
+the most predictive shorts — clipping removes that information.
+===========================================================================
+
+  Config                            Ann   Sharpe    MaxDD      dSR
+  --------------------------------------------------------------
+  wins_02_98  (baseline)        +12.99%   +0.765   -14.46%          
+  wins_01_99  (looser)          +12.14%   +0.722   -14.46%   -0.043
+  wins_05_95  (tighter)         +12.25%   +0.732   -15.21%   -0.033
+  wins_00_100 (none)            +12.14%   +0.722   -14.46%   -0.043
+  wins_10_90  (aggressive)      +13.73%   +0.814   -13.58%   +0.049
+
+  If wins_00_100 (no clipping) improves: extreme inflators are predictive.
+  If it hurts: outliers are noise / ZEC effect dominating extreme low-end.
+
+===========================================================================
+TEST 5 — Regime-Conditional Permutation (Bull vs Bear)
+100 permutations per regime. Tests which regime actually drives the signal.
+===========================================================================
+
+  Bull regime: 23 periods | 2022-11-06 → 2025-10-05
+  Real signal: SR=+0.707  (N=33 active periods)
+    25/100 | null mean=+0.298 | above real=2/25
+    50/100 | null mean=+0.198 | above real=2/50
+    75/100 | null mean=+0.204 | above real=4/75
+    100/100 | null mean=+0.198 | above real=5/100
+
+  Bull RESULTS:
+    Real SR         : +0.707
+    Null mean SR    : +0.198
+    Null std        : 0.332
+    Null 95th pct   : +0.686
+    Sims >= real    : 5/100
+    p-value         : 0.0500
+    Real SR pctile  : 95.0th
+    Verdict: Borderline signal (p<0.10)
+
+  Bear regime: 15 periods | 2022-02-06 → 2026-01-04
+  Real signal: SR=+0.760  (N=43 active periods)
+    25/100 | null mean=+0.248 | above real=2/25
+    50/100 | null mean=+0.248 | above real=3/50
+    75/100 | null mean=+0.268 | above real=5/75
+    100/100 | null mean=+0.248 | above real=6/100
+
+  Bear RESULTS:
+    Real SR         : +0.760
+    Null mean SR    : +0.248
+    Null std        : 0.326
+    Null 95th pct   : +0.772
+    Sims >= real    : 6/100
+    p-value         : 0.0600
+    Real SR pctile  : 94.0th
+    Verdict: Borderline signal (p<0.10)
+
+===========================================================================
+All tests complete in 21.6 min.
+===========================================================================
