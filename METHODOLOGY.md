@@ -410,7 +410,90 @@ the $5M/day ADTV floor requirement.
 
 ---
 
-## 17. Files
+## 17. Architecture & Ablation Tests (post-v8)
+
+Two additional diagnostic scripts were run after v8 to identify structural improvements
+using only existing data (no new data sources required).
+
+### 17a. Veto Ablation (`ablation_study.py`)
+
+Leave-one-out ablation: each component disabled individually, Sharpe delta measured vs v8.
+
+| Component removed | dSharpe | Decision |
+|---|---|---|
+| Circuit breaker (>40% short loss) | −0.897 | **KEEP** — essential; strategy blows up without it |
+| 26w signal only (drop 52w component) | −0.809 | **KEEP 52w** — 52w is the load-bearing signal |
+| Buffer bands (hysteresis removed) | −0.494 | **KEEP** — high turnover without them |
+| Squeeze exclusion (>40% prior rally) | −0.312 | **KEEP** |
+| Long quality veto (bottom 33% BTC-alpha) | −0.180 | **KEEP** |
+| Altseason veto (≥75% alts beat BTC) | −0.170 | **KEEP** |
+| Regime always active (no Sideways cash) | −0.114 | **KEEP** — regime gating matters |
+| **Momentum veto (50th pct short pool)** | **0.000** | **DROP** — completely neutral, frees 1 param |
+| 52w signal only (drop 26w component) | **+0.110** | **26w window adds noise; 52w alone is better** |
+
+**Critical insight**: the 26w fast supply window hurts relative to using 52w alone. Combined
+with the architecture tests below, the evidence consistently points toward longer windows.
+
+### 17b. Architecture Tests (`test_architectures.py`)
+
+11 structural variants tested. All use v8 parameters as the base. Key results:
+
+| Config | Ann% | Sharpe | HAC | MaxDD% | Win% | dSharpe |
+|---|---|---|---|---|---|---|
+| v8 BASELINE | +12.99% | +0.765 | +1.058 | −14.46% | 60.0% | — |
+| SHORT_ONLY (zero long leg) | −2.43% | −0.030 | +0.565 | −68.72% | 60.0% | −0.795 |
+| WIN_26_104 (26w+104w windows) | +10.79% | +0.518 | +0.900 | −15.20% | 53.3% | −0.247 |
+| BTC_REGIME (BTC price as regime index) | +10.32% | +0.604 | +0.904 | −11.63% | 55.6% | −0.161 |
+| WIN_39_78 (39w+78w windows) | +11.26% | +0.694 | +1.022 | −12.05% | 60.0% | −0.071 |
+| FUND_VETO (short only when funding>0) | +12.99% | +0.765 | +1.058 | −14.46% | 60.0% | 0.000 |
+| 52w signal only | +16.34% | +0.875 | +1.407 | −12.49% | 55.6% | +0.110 |
+| WIN_52_104 (52w+104w windows) | +18.73% | +1.161 | +1.594 | −10.55% | 65.1% | +0.396 |
+| BTC_LONG (BTC perp replaces altcoin longs) | +25.65% | +1.068 | +1.303 | −15.97% | 57.8% | +0.303 |
+| WIN_52_104 + 104w-pure signal | +22.28% | +1.304 | +1.602 | **−9.58%** | **70.5%** | +0.539 |
+| BTC_LONG + WIN_52_104 | +29.68% | +1.402 | +1.723 | −16.85% | 65.1% | +0.637 |
+| **ULTIMATE** (BTC_LONG + 104w pure) | **+33.73%** | **+1.533** | **+1.692** | −18.51% | 65.9% | **+0.768** |
+
+**Findings:**
+
+1. **SHORT_ONLY is catastrophic** (MaxDD −68.72%). The long leg is not generating alpha — it
+   is hedging the short leg against altcoin-wide pumps. Removing it causes full short exposure
+   during altcoin bull regimes with no offset.
+
+2. **BTC_LONG is a genuine improvement** (+0.303 dSharpe). Replacing the structurally losing
+   altcoin long basket (gross −89.7% cumulative) with a BTC perpetual long converts the strategy
+   into a coherent BTC-vs-high-inflation-alts spread trade. Net funding turns negative (BTC longs
+   pay ~0.006% per 8h) but the improved spread more than compensates. Funding sign convention:
+   `fund_long_basket = btc_funding_sum` (positive = what longs pay = drag).
+
+3. **WIN_52_104 is the best single parameter change** (+0.396 dSharpe). Both ablation (52w alone
+   outperforms 50/50 blend) and architecture tests (52w+104w > 26w+52w) confirm the 26w window
+   adds noise. Supply inflation over 52+ weeks captures structural dilution; shorter windows pick
+   up temporary pauses and bursts that revert.
+
+4. **BTC_REGIME hurts** (−0.161 dSharpe). The cap-weighted altcoin index detects altcoin-specific
+   dynamics (alt seasons, alt bear markets independent of BTC) that pure BTC price misses. Keep
+   the existing altcoin index regime.
+
+5. **FUND_VETO is neutral** (0.000 dSharpe). Funding veto on the short leg does not activate
+   meaningfully — nearly all short candidates have positive prior-period funding regardless.
+
+### 17c. Recommended Next Configurations
+
+| Priority | Config | Sharpe | MaxDD | Notes |
+|---|---|---|---|---|
+| Conservative | WIN_52_104 + 104w-pure signal | +1.304 | −9.58% | Lowest drawdown, highest win rate |
+| Balanced | BTC_LONG + WIN_52_104 | +1.402 | −16.85% | Best IS Sharpe without regime change |
+| Aggressive | ULTIMATE (BTC_LONG + 104w pure) | +1.533 | −18.51% | Highest return, higher drawdown |
+
+All three: **drop the momentum veto** (neutral, frees one parameter, reduces IS-overfitting risk).
+
+*Note: All configs above are evaluated on the same 2022–2026 IS dataset. The additional
+architecture search increases the effective multiple-testing count and further deflates the
+true out-of-sample Sharpe. Walk-forward validation required before adopting any variant.*
+
+---
+
+## 18. Files
 
 | File | Purpose |
 |------|---------|
@@ -420,11 +503,13 @@ the $5M/day ADTV floor requirement.
 | `backtest_diagnostics.py` | Funding strip, beta decomp, token attribution, spread dist, bootstrap CI |
 | `zec_analysis.py` | ZEC attribution + per-period decomp + overfitting audit |
 | `net_vs_gross.py` | Gross vs net P&L breakdown and capital requirements |
+| `ablation_study.py` | Leave-one-out veto ablation (10 configs vs v8 baseline) |
+| `test_architectures.py` | Architectural variant tests (11 configs, no new data) |
 | `fetch_binance_data.py` | Data fetcher (Binance perp prices + funding) |
 
 ---
 
-## 18. Version Comparison
+## 19. Version Comparison
 
 | Metric | v4 | v6 | v7 baseline | v8 (current) |
 |--------|----|----|------------|--------------|
