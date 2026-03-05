@@ -1098,49 +1098,49 @@ def plot_results(res: dict) -> None:
     fig2.savefig(out2, dpi=150); plt.close(fig2)
     print(f"[Plot] {out2}")
 
-    # Figure 3: v6 vs v7 scorecard
-    V6 = dict(
-        combined_ann=+0.0010, combined_dd=-0.1922, sharpe=+0.003,
-        win_rate=0.526, mean_spread=0.0334,
-        bull_geo=0.5191, bear_geo=0.5334, side_geo=0.0134,
+    # Figure 3: v7 baseline vs v8 scorecard
+    V7_BASE = dict(
+        combined_ann=+0.0397, combined_dd=-0.2073, sharpe=+0.220,
+        win_rate=0.533, mean_spread=0.0344,
+        bull_geo=0.1871, bear_geo=0.8188, side_geo=0.0000,
     )
-    st7 = portfolio_stats(res["combined_net"])
-    v7_geo = {}
+    st8 = portfolio_stats(res["combined_net"])
+    v8_geo = {}
     for regime in ["Bull", "Bear", "Sideways"]:
         mask = regs == regime
         sub  = sp.iloc[list(np.where(mask)[0])]
-        v7_geo[regime] = ((1 + sub.clip(lower=-0.99)).prod() ** (12/len(sub)) - 1
+        v8_geo[regime] = ((1 + sub.clip(lower=-0.99)).prod() ** (12/len(sub)) - 1
                           if len(sub) > 0 else np.nan)
 
     regimes_list = ["Bull", "Bear", "Sideways"]
     fig3, axes3 = plt.subplots(2, 2, figsize=(14, 10))
-    fig3.suptitle("v6 (regime-aware freq) vs v7 (structural fixes) — Post-2022",
+    fig3.suptitle("v7 baseline vs v8 (supply window + band tuning) — Post-2022",
                   fontsize=13, fontweight="bold")
     x = np.arange(len(regimes_list)); w = 0.36
 
     ax6 = axes3[0, 0]
-    v6_geos = [V6["bull_geo"], V6["bear_geo"], V6["side_geo"]]
-    v7_geos = [v7_geo.get(r, 0) for r in regimes_list]
-    v7_geos_bar = [v if not np.isnan(v) else 0 for v in v7_geos]
-    ax6.bar(x - w/2, v6_geos,     w, label="v6", color="silver",        edgecolor="black")
-    ax6.bar(x + w/2, v7_geos_bar, w, label="v7", color="mediumseagreen", edgecolor="black")
+    v7b_geos = [V7_BASE["bull_geo"], V7_BASE["bear_geo"], V7_BASE["side_geo"]]
+    v8_geos  = [v8_geo.get(r, 0) for r in regimes_list]
+    v8_geos_bar = [v if not np.isnan(v) else 0 for v in v8_geos]
+    ax6.bar(x - w/2, v7b_geos,   w, label="v7 baseline", color="silver",        edgecolor="black")
+    ax6.bar(x + w/2, v8_geos_bar, w, label="v8",          color="mediumseagreen", edgecolor="black")
     ax6.axhline(0, color="black", lw=0.8)
     ax6.set_xticks(x); ax6.set_xticklabels(regimes_list)
     ax6.set_title("Ann. Geometric Spread by Regime"); ax6.set_ylabel("Geo. Spread")
     ax6.legend(fontsize=9); ax6.grid(True, alpha=0.2)
 
     ax7 = axes3[0, 1]
-    cum_v7 = (1 + res["combined_net"].dropna()).cumprod()
-    ax7.plot(cum_v7.index, cum_v7.values, "mediumseagreen", lw=2.5, label="v7 combined net")
+    cum_v8 = (1 + res["combined_net"].dropna()).cumprod()
+    ax7.plot(cum_v8.index, cum_v8.values, "mediumseagreen", lw=2.5, label="v8 combined net")
     ax7.axhline(1.0, color="black", lw=1.0, ls="--", label="Breakeven")
-    ax7.set_title("v7 Combined NAV"); ax7.set_ylabel("Cumulative Return")
+    ax7.set_title("v8 Combined NAV"); ax7.set_ylabel("Cumulative Return")
     ax7.legend(fontsize=9); ax7.grid(True, alpha=0.2)
 
     ax8 = axes3[1, 0]
-    dd = (cum_v7 - cum_v7.cummax()) / cum_v7.cummax()
-    ax8.fill_between(dd.index, dd.values, 0, color="mediumseagreen", alpha=0.55, label="v7")
+    dd = (cum_v8 - cum_v8.cummax()) / cum_v8.cummax()
+    ax8.fill_between(dd.index, dd.values, 0, color="mediumseagreen", alpha=0.55, label="v8")
     ax8.set_ylabel("Drawdown"); ax8.set_xlabel("Date")
-    ax8.set_title("Drawdown: v7 Combined Net")
+    ax8.set_title("Drawdown: v8 Combined Net")
     ax8.legend(fontsize=9); ax8.grid(True, alpha=0.2)
 
     ax9 = axes3[1, 1]
@@ -1150,15 +1150,15 @@ def plot_results(res: dict) -> None:
         return f"{v:{fmt}}" if not np.isnan(v) else "N/A"
 
     rows = [
-        ["Metric",              "v6",                    "v7"],
-        ["Combined net (ann.)", _f(V6["combined_ann"]),  _f(st7["ann_return"])],
-        ["MaxDD",               _f(V6["combined_dd"]),   _f(st7["max_dd"])],
-        ["Sharpe",              f"{V6['sharpe']:+.3f}",  _f(st7["sharpe"], "+.3f")],
-        ["Win rate",            f"{V6['win_rate']:.1%}", f"{(sp>0).mean():.1%}"],
-        ["Mean spread",         _f(V6["mean_spread"],"+.2%"), _f(sp.mean(),"+.2%")],
-        ["Bear geo spread",     _f(V6["bear_geo"]),      _f(v7_geo.get("Bear", float("nan")))],
-        ["Bull geo spread",     _f(V6["bull_geo"]),      _f(v7_geo.get("Bull", float("nan")))],
-        ["Sideways",            _f(V6["side_geo"]),      "skipped"],
+        ["Metric",              "v7 baseline",            "v8 (current)"],
+        ["Combined net (ann.)", _f(V7_BASE["combined_ann"]),  _f(st8["ann_return"])],
+        ["MaxDD",               _f(V7_BASE["combined_dd"]),   _f(st8["max_dd"])],
+        ["Sharpe",              f"{V7_BASE['sharpe']:+.3f}",  _f(st8["sharpe"], "+.3f")],
+        ["Win rate",            f"{V7_BASE['win_rate']:.1%}", f"{(sp>0).mean():.1%}"],
+        ["Mean spread",         _f(V7_BASE["mean_spread"],"+.2%"), _f(sp.mean(),"+.2%")],
+        ["Bear geo spread",     _f(V7_BASE["bear_geo"]),      _f(v8_geo.get("Bear", float("nan")))],
+        ["Bull geo spread",     _f(V7_BASE["bull_geo"]),      _f(v8_geo.get("Bull", float("nan")))],
+        ["Sideways",            "cash (0%)",                  "cash (0%)"],
     ]
     tbl = ax9.table(cellText=rows[1:], colLabels=rows[0],
                     loc="center", cellLoc="center")
@@ -1167,10 +1167,10 @@ def plot_results(res: dict) -> None:
     for j in range(3):
         tbl[0, j].set_facecolor("#2c3e50")
         tbl[0, j].set_text_props(color="white", fontweight="bold")
-    ax9.set_title("v6 vs v7 Scorecard", fontweight="bold", pad=14)
+    ax9.set_title("v7 baseline vs v8 Scorecard", fontweight="bold", pad=14)
 
     fig3.tight_layout()
-    out3 = OUTPUT_DIR + "perp_ls_v7_vs_v6.png"
+    out3 = OUTPUT_DIR + "perp_ls_v8_vs_v7.png"
     fig3.savefig(out3, dpi=150); plt.close(fig3)
     print(f"[Plot] {out3}")
 

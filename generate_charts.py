@@ -6,7 +6,7 @@ Generates the full chart suite for the v8 Supply-Dilution L/S Strategy.
 Charts produced:
   perp_ls_v7_cumulative.png   — from main strategy (cumulative wealth, 3-panel)
   perp_ls_v7_regime_dd.png    — from main strategy (drawdown + spread bars)
-  perp_ls_v7_vs_v6.png        — from main strategy (v6/v7 scorecard)
+  perp_ls_v8_vs_v7.png        — from main strategy (v7 baseline vs v8 scorecard)
   perp_ls_v8_dashboard.png    — NEW: net stats dashboard
   perp_ls_v8_slippage.png     — NEW: slippage sensitivity
   perp_ls_v8_walkforward.png  — NEW: walk-forward OOS Sharpe
@@ -350,7 +350,7 @@ try: os.remove(LOG_PATH)
 except: pass
 
 print("\nAll charts generated:")
-for f in ["perp_ls_v7_cumulative.png", "perp_ls_v7_regime_dd.png", "perp_ls_v7_vs_v6.png",
+for f in ["perp_ls_v7_cumulative.png", "perp_ls_v7_regime_dd.png", "perp_ls_v8_vs_v7.png",
           "perp_ls_v8_dashboard.png", "perp_ls_v8_slippage.png",
           "perp_ls_v8_walkforward.png", "perp_ls_v8_permutation.png"]:
     path = OUT_DIR + f

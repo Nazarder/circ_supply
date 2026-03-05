@@ -703,7 +703,7 @@ all trending conditions, not regime-specific alpha.
 |-------|-------------|
 | `perp_ls_v7_cumulative.png` | 3-panel: cumulative wealth (log), net NAV, per-period spread bars |
 | `perp_ls_v7_regime_dd.png` | Drawdown + per-period regime spread |
-| `perp_ls_v7_vs_v6.png` | v6 vs v7 scorecard (geo spread by regime, NAV, drawdown, table) |
+| `perp_ls_v8_vs_v7.png` | v7 baseline vs v8 scorecard (geo spread by regime, NAV, drawdown, table) |
 | `perp_ls_v8_dashboard.png` | Dark-mode dashboard: NAV, drawdown, spreads, rolling 12m Sharpe, stats |
 | `perp_ls_v8_slippage.png` | Sharpe and Ann. Return vs slippage coefficient k |
 | `perp_ls_v8_walkforward.png` | Walk-forward bar chart (6 folds × 3 configs) |
