@@ -585,7 +585,98 @@ signal may be riding a structural tailwind rather than generating genuine alpha.
 
 ---
 
-## 19. Files
+## 19. Blind Spot Tests
+
+Five additional tests run to probe structural weak points identified in QR review.
+
+### Test 1 — Signal Dispersion Filter
+Does the supply signal only work when there is genuine cross-sectional dispersion (wide IQR
+of supply ranks)? Low-dispersion periods may be pure noise regardless of signal value.
+
+| Metric | Value |
+|--------|-------|
+| Median 26w IQR across periods | 0.107 |
+| High-dispersion half Sharpe (N=23) | +1.123 |
+| Low-dispersion half Sharpe (N=22) | +0.664 |
+| Spearman(IQR, return) | rho = −0.079, p = 0.607 |
+
+**Finding**: Signal return is **independent of dispersion level**. The strategy fires with
+equal effectiveness whether cross-sectional spread is wide or narrow. No dispersion filter
+is warranted — but this also means the model cannot self-regulate in low-information periods.
+
+### Test 2 — 26w vs 52w Rank Correlation
+If the two signal layers are highly correlated, the "two-layer" model is complexity theatre.
+
+| Metric | Value |
+|--------|-------|
+| Mean Spearman rank-corr (26w vs 52w) | **0.750** |
+| Std across periods | 0.071 |
+| % periods with corr > 0.80 | 25.2% |
+| % periods with corr > 0.90 | 0.9% |
+
+**Finding**: Moderate correlation (0.75 mean). Not redundant enough to eliminate either
+window, but the diversification benefit is materially less than a "two independent factors"
+framing implies. The 52w window dominates: ablation confirmed 52w-only (+0.110 dSharpe)
+beats the 50/50 blend, and WIN_52_104 architecture is the best single improvement.
+
+### Test 3 — Slippage Sensitivity Sweep
+
+| k | Ann. Return | Sharpe | dSharpe |
+|---|------------|--------|---------|
+| 0.0001 | +20.87% | +1.225 | ref (ideal) |
+| **0.0005 (baseline)** | **+12.99%** | **+0.765** | −0.460 |
+| 0.001 (2× baseline) | +8.14% | +0.482 | −0.743 |
+| 0.002 (4× baseline) | +4.58% | +0.272 | −0.953 |
+| 0.005 (10× baseline) | +2.83% | +0.169 | −1.056 |
+| 0.010 (20× baseline) | +2.54% | +0.152 | −1.073 |
+
+**Finding**: Sharpe drops below 0.5 at **k = 0.001** (2× the assumed market impact). This
+is the single most dangerous blind spot in the model. For 9-10 token baskets including
+mid/small-cap alts, real market impact could easily be 2×–5× the modelled k=0.0005. The
++0.765 Sharpe should be treated as an **upper bound**, with k=0.001 (SR +0.48) as the
+conservative estimate.
+
+### Test 4 — Winsorisation Sensitivity
+
+| Config | Sharpe | dSharpe |
+|--------|--------|---------|
+| 2/98% (baseline) | +0.765 | — |
+| 1/99% (looser) | +0.722 | −0.043 |
+| 5/95% (tighter) | +0.732 | −0.033 |
+| 0/100% (no clipping) | +0.722 | −0.043 |
+| 10/90% (aggressive) | +0.814 | +0.049 |
+
+**Finding**: Removing winsorisation entirely is neutral (−0.043 dSharpe), and aggressive
+clipping (10/90%) marginally helps (+0.049). Extreme supply inflators are **noise, not
+signal** — the predictive information lives in the middle of the distribution. The current
+2/98% clip is reasonable; tightening to 10/90% is a minor candidate improvement.
+
+### Test 5 — Regime-Conditional Permutation (Bull vs Bear)
+
+| Regime | Real SR | Null Mean | Null Std | p-value | Real Pctile |
+|--------|---------|-----------|----------|---------|-------------|
+| Bull (N=23) | +0.707 | +0.198 | 0.332 | **0.050** | 95th |
+| Bear (N=15) | +0.760 | +0.248 | 0.326 | **0.060** | 94th |
+
+**Finding**: Both regimes are **independently borderline**. Neither Bull nor Bear is the
+regime where the supply signal is clearly valid — the full-sample p=0.05 is not driven by
+one regime outperforming. This is consistent with the signal being weakly effective across
+all trending conditions, not regime-specific alpha.
+
+### Blind Spots Summary
+
+| Issue | Severity | Finding |
+|-------|----------|---------|
+| Slippage sensitivity | **HIGH** | SR halves at 2× assumed k; real execution could be 2–5× |
+| Short history (45 periods) | **HIGH** | All sub-period statistics have very wide confidence intervals |
+| Signal dispersion independence | Medium | Model fires in low-info periods without self-regulation |
+| 26w/52w redundancy | Medium | 0.75 mean correlation; blending adds marginal diversification |
+| Regime-conditional signal | Medium | Both regimes borderline (p~0.05); no regime-specific strength |
+| Winsorisation | Low | Current 2/98% is fine; 10/90% is minor candidate improvement |
+
+---
+
+## 20. Files
 
 | File | Purpose |
 |------|---------|
@@ -598,11 +689,29 @@ signal may be riding a structural tailwind rather than generating genuine alpha.
 | `ablation_study.py` | Leave-one-out veto ablation (10 configs vs v8 baseline) |
 | `test_architectures.py` | Architectural variant tests (11 configs, no new data) |
 | `stress_tests.py` | Stress tests: walk-forward, permutation, BTC beta OLS |
+| `perm_v8.py` | Core thesis permutation (alt L/S, both sides shuffled) |
+| `sideways_test.py` | Sideways regime load-bearing test |
+| `blind_spots.py` | 5-test blind spot suite (dispersion, corr, slippage, winsor, regime perms) |
+| `generate_charts.py` | Full chart suite generator (7 charts) |
 | `fetch_binance_data.py` | Data fetcher (Binance perp prices + funding) |
 
 ---
 
-## 20. Version Comparison
+## 21. Charts
+
+| Chart | Description |
+|-------|-------------|
+| `perp_ls_v7_cumulative.png` | 3-panel: cumulative wealth (log), net NAV, per-period spread bars |
+| `perp_ls_v7_regime_dd.png` | Drawdown + per-period regime spread |
+| `perp_ls_v7_vs_v6.png` | v6 vs v7 scorecard (geo spread by regime, NAV, drawdown, table) |
+| `perp_ls_v8_dashboard.png` | Dark-mode dashboard: NAV, drawdown, spreads, rolling 12m Sharpe, stats |
+| `perp_ls_v8_slippage.png` | Sharpe and Ann. Return vs slippage coefficient k |
+| `perp_ls_v8_walkforward.png` | Walk-forward bar chart (6 folds × 3 configs) |
+| `perp_ls_v8_permutation.png` | Permutation null distributions (core thesis + ULTIMATE) |
+
+---
+
+## 22. Version Comparison
 
 | Metric | v4 | v6 | v7 baseline | v8 (current) |
 |--------|----|----|------------|--------------|
