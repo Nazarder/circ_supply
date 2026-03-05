@@ -1,0 +1,46 @@
+==========================================================================================
+ARCHITECTURE TESTS — v8 Supply-Dilution L/S Strategy
+No new data sources. All tests use existing CMC + Binance perp + funding data.
+==========================================================================================
+Running 11 tests on 14 workers ...
+
+  [BASELINE] running baseline ...
+  [BASELINE] Sharpe=+0.765  Ann=+12.99%
+
+  Running remaining 10 tests in parallel ...
+
+  Label            Ann%   Sharpe      HAC   MaxDD%   Win%    B/Be/Sw   NetFund      dSR
+  -----------------------------------------------------------------------------------------------
+  BASELINE      +12.99%   +0.765   +1.058   -14.46%   60.0%  278/145/54   +0.0661         
+  SHORT_ONLY     -2.43%   -0.030   +0.565   -68.72%   60.0%  278/145/54   +0.0719   -0.795  *** WORSE
+  WIN_26_104    +10.79%   +0.518   +0.900   -15.20%   53.3%  278/145/54   +0.0243   -0.247  *** WORSE
+  WIN_52_104    +18.73%   +1.161   +1.594   -10.55%   65.1%  278/145/54   +0.0876   +0.396  *** BETTER
+  WIN_39_78     +11.26%   +0.694   +1.022   -12.05%   60.0%  278/145/54   +0.0968   -0.071  *  WORSE
+  BTC_REGIME    +10.32%   +0.604   +0.904   -11.63%   55.6%  244/166/67   +0.0438   -0.161  *** WORSE
+  FUND_VETO     +12.99%   +0.765   +1.058   -14.46%   60.0%  278/145/54   +0.0661   +0.000
+  BTC_LONG      +33.31%   +1.369   +1.535   -14.88%   57.8%  278/145/54   +0.3281   +0.604  *** BETTER
+  CMB_A         -10.37%   -0.134   +0.358   -75.44%   55.6%  244/166/67   +0.0496   -0.899  *** WORSE
+  CMB_B         +30.34%   +1.264   +1.536   -14.88%   55.6%  244/166/67   +0.3252   +0.499  *** BETTER
+  CMB_C         +28.25%   +1.343   +1.702   -14.83%   55.8%  244/166/67   +0.3086   +0.578  *** BETTER
+
+  dSR: Sharpe delta vs v8 baseline. Positive = improvement. Threshold |dSR|>=0.05.
+  B/Be/Sw: Bull / Bear / Sideways periods.
+  NetFund: net funding P&L (cumulative fraction, long+short combined).
+
+==========================================================================================
+SUMMARY
+==========================================================================================
+
+  Ranked by Sharpe improvement vs v8 baseline:
+     1. BTC_LONG      dSR=+0.604  [BETTER]
+     2. CMB_C         dSR=+0.578  [BETTER]
+     3. CMB_B         dSR=+0.499  [BETTER]
+     4. WIN_52_104    dSR=+0.396  [BETTER]
+     5. FUND_VETO     dSR=+0.000  [NEUTRAL]
+     6. WIN_39_78     dSR=-0.071  [WORSE]
+     7. BTC_REGIME    dSR=-0.161  [WORSE]
+     8. WIN_26_104    dSR=-0.247  [WORSE]
+     9. SHORT_ONLY    dSR=-0.795  [WORSE]
+    10. CMB_A         dSR=-0.899  [WORSE]
+
+Done.
