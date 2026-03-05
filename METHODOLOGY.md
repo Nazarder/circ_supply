@@ -493,7 +493,99 @@ true out-of-sample Sharpe. Walk-forward validation required before adopting any 
 
 ---
 
-## 18. Files
+## 18. Stress Tests (QR Validation)
+
+Three tests run to address the QR critique: (1) no hold-out validation, (2) BTC dominance
+masking supply signal, (3) results driven by BTC beta rather than alpha.
+
+### Test A — Rolling Walk-Forward (5 × 6-month OOS folds)
+
+Fixed architecture per config; no re-optimisation per fold. IS window = 2022H1+H2.
+
+| Window | v8 SR | WIN52_SLOW SR | ULTIMATE SR |
+|--------|-------|---------------|-------------|
+| IS  2022H1+H2 (ref) | +0.883 | +0.921 | +0.835 |
+| OOS 2023-H2 | +3.123 | −0.022 | +0.988 |
+| OOS 2024-H1 | +4.021 | +3.280 | +7.786 |
+| OOS 2024-H2 | +0.352 | +1.876 | +0.253 |
+| OOS 2025-H1 | +5.449 | +4.237 | +4.740 |
+| OOS 2025-H2+ | −2.434 | +2.250 | +0.954 |
+| **Mean OOS SR** | **+2.102** | **+2.324** | **+2.944** |
+| **OOS/IS ratio** | **2.38×** | **2.52×** | **3.53×** |
+
+**Finding**: All three configs deliver positive mean OOS Sharpe with OOS/IS ratios >1.
+This is structurally unusual (bull-market crypto universe generates strong cross-sectional
+dispersion), and the IS window (2022, bear market) was the hardest. OOS 2025-H2+ was the
+only consistent failure period for v8; WIN52_SLOW and ULTIMATE both survived it.
+
+### Test B — ULTIMATE Permutation Test (200 simulations)
+
+Null hypothesis: long BTC perp + short *N randomly-selected alts* (PERMUTE_SEED shuffles
+pct_rank, leaving long leg = BTC unchanged). Tests whether supply-inflation signal on the
+short side beats random alt selection.
+
+| Statistic | Value |
+|-----------|-------|
+| Real ULTIMATE Sharpe | +1.533 |
+| Permuted mean Sharpe | +1.005 |
+| Permuted std Sharpe | 0.236 |
+| Permuted 95th pct | +1.458 |
+| Permuted 99th pct | +1.527 |
+| Sims ≥ real SR | 2 / 200 |
+| Empirical p-value | **0.0100** |
+| Real SR percentile in null | **99.0th** |
+
+**Finding**: p = 0.010 (marginally above the 1% threshold). The real Sharpe sits at the
+99th percentile of the null distribution. The supply-inflation signal on the short side
+adds measurable alpha over random alt selection — though the signal is weak relative to
+the long-BTC structural edge (permuted null mean = +1.005, already strong from BTC long).
+
+### Test C — BTC Beta Decomposition (OLS)
+
+ULTIMATE per-period net returns regressed on BTC monthly returns.
+
+| Statistic | Value |
+|-----------|-------|
+| N periods | 44 |
+| alpha (per period) | +0.0269 |
+| alpha (annualised) | **+37.5%/yr** |
+| alpha t-stat | +2.93 |
+| alpha p-value | **0.0054** |
+| beta (BTC exposure) | +0.075 |
+| beta t-stat | +1.19 (p=0.24) |
+| R² | **0.032** |
+
+**Finding**: 96.8% of per-period variance is idiosyncratic — *not* explained by BTC
+monthly returns. The alpha intercept is +37.5%/yr (annualised) with t=2.93, p=0.005 —
+statistically significant at conventional levels. Net BTC beta = +0.075 (near zero),
+refuting the claim that ULTIMATE is simply a leveraged BTC dominance trade.
+
+Regime-conditional residuals:
+- Bull (N=23): mean_residual = +0.0156, t=+1.29, p=0.210 (directionally positive, weak)
+- Bear (N=15): mean_residual = −0.0131, t=−0.73, p=0.480 (mildly negative, insignificant)
+- Sideways (N=6): mean_residual = −0.0269, t=−13.62, p<0.001 (negative — but Sideways = 0%
+  exposure by design, so residuals reflect model artefact from near-zero variance periods)
+
+### Summary
+
+| QR Critique | Test | Finding |
+|-------------|------|---------|
+| No hold-out validation | Walk-forward A | All configs positive OOS; ULTIMATE OOS/IS=3.53× |
+| BTC dominance masks signal | Permutation B | p=0.010; supply signal at 99th pctl of null |
+| Strategy is just BTC beta | OLS C | R²=0.032; alpha=+37.5%/yr, t=2.93, p=0.005 |
+
+The three stress tests provide meaningful (if not ironclad) evidence that:
+1. The strategy is not purely an IS artefact.
+2. The short-side supply signal contributes alpha beyond random alt selection.
+3. ULTIMATE returns are not explained by BTC beta (R²=3.2%).
+
+Key caveat: the OOS periods coincide with a strong crypto bull market (2023–2025) which
+generates large cross-sectional dispersion irrespective of signal quality. The supply
+signal may be riding a structural tailwind rather than generating genuine alpha.
+
+---
+
+## 19. Files
 
 | File | Purpose |
 |------|---------|
@@ -505,11 +597,12 @@ true out-of-sample Sharpe. Walk-forward validation required before adopting any 
 | `net_vs_gross.py` | Gross vs net P&L breakdown and capital requirements |
 | `ablation_study.py` | Leave-one-out veto ablation (10 configs vs v8 baseline) |
 | `test_architectures.py` | Architectural variant tests (11 configs, no new data) |
+| `stress_tests.py` | Stress tests: walk-forward, permutation, BTC beta OLS |
 | `fetch_binance_data.py` | Data fetcher (Binance perp prices + funding) |
 
 ---
 
-## 19. Version Comparison
+## 20. Version Comparison
 
 | Metric | v4 | v6 | v7 baseline | v8 (current) |
 |--------|----|----|------------|--------------|

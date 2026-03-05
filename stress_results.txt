@@ -1,0 +1,104 @@
+
+================================================================================
+STRESS TESTS — Supply-Dilution L/S Strategy (ULTIMATE architecture)
+Targets QR critiques: p-hacking, BTC dominance, permutation validity
+================================================================================
+
+================================================================================
+TEST A — Rolling Walk-Forward (5 × 6-month OOS folds)
+Fixed architecture per config; no re-optimisation per fold.
+================================================================================
+
+  [v8        ] IS  2022H1+H2      SR=+0.883  Ann=+15.53%  N=14
+  [v8        ] OOS 2023-H2        SR=+3.123  Ann=+25.75%  N=5
+  [v8        ] OOS 2024-H1        SR=+4.021  Ann=+56.94%  N=5
+  [v8        ] OOS 2024-H2        SR=+0.352  Ann=+12.40%  N=5
+  [v8        ] OOS 2025-H1        SR=+5.449  Ann=+24.73%  N=5
+  [v8        ] OOS 2025-H2+       SR=-2.434  Ann=-38.55%  N=6
+  [WIN52_SLOW] IS  2022H1+H2      SR=+0.921  Ann=+15.90%  N=13
+  [WIN52_SLOW] OOS 2023-H2        SR=-0.022  Ann= -0.10%  N=5
+  [WIN52_SLOW] OOS 2024-H1        SR=+3.280  Ann=+76.28%  N=5
+  [WIN52_SLOW] OOS 2024-H2        SR=+1.876  Ann=+58.12%  N=5
+  [WIN52_SLOW] OOS 2025-H1        SR=+4.237  Ann=+31.15%  N=5
+  [WIN52_SLOW] OOS 2025-H2+       SR=+2.250  Ann=+33.46%  N=6
+  [ULTIMATE  ] IS  2022H1+H2      SR=+0.835  Ann=+22.24%  N=13
+  [ULTIMATE  ] OOS 2023-H2        SR=+0.988  Ann= +5.13%  N=5
+  [ULTIMATE  ] OOS 2024-H1        SR=+7.786  Ann=+120.69%  N=5
+  [ULTIMATE  ] OOS 2024-H2        SR=+0.253  Ann= +4.66%  N=5
+  [ULTIMATE  ] OOS 2025-H1        SR=+4.740  Ann=+141.42%  N=5
+  [ULTIMATE  ] OOS 2025-H2+       SR=+0.954  Ann=+14.59%  N=6
+
+  Window                  v8 SR   WIN52 SR  ULTIMATE SR
+  -------------------------------------------------------
+  IS  2022H1+H2         +0.883    +0.921       +0.835  <-- IS reference
+  OOS 2023-H2           +3.123    -0.022       +0.988
+  OOS 2024-H1           +4.021    +3.280       +7.786
+  OOS 2024-H2           +0.352    +1.876       +0.253
+  OOS 2025-H1           +5.449    +4.237       +4.740
+  OOS 2025-H2+          -2.434    +2.250       +0.954
+
+  v8            IS SR=+0.883  Mean OOS SR=+2.102  OOS/IS ratio=2.38x
+  WIN52_SLOW    IS SR=+0.921  Mean OOS SR=+2.324  OOS/IS ratio=2.52x
+  ULTIMATE      IS SR=+0.835  Mean OOS SR=+2.944  OOS/IS ratio=3.53x
+
+================================================================================
+TEST B — ULTIMATE Permutation Test (200 simulations)
+Shuffles pct_rank (short basket random, long basket stays BTC).
+Null: 'long BTC + short N random alts from universe'.
+================================================================================
+
+  Running ULTIMATE (real signal)...
+  ULTIMATE real: SR=+1.533  Ann=+33.73%
+
+  Running 200 permuted simulations...
+    20/200 done | mean=+0.925 | above real=0/20
+    40/200 done | mean=+0.982 | above real=1/40
+    60/200 done | mean=+0.976 | above real=1/60
+    80/200 done | mean=+0.992 | above real=1/80
+    100/200 done | mean=+0.994 | above real=1/100
+    120/200 done | mean=+1.006 | above real=1/120
+    140/200 done | mean=+0.995 | above real=1/140
+    160/200 done | mean=+0.996 | above real=1/160
+    180/200 done | mean=+1.004 | above real=2/180
+    200/200 done | mean=+1.005 | above real=2/200
+
+  RESULTS:
+  Real ULTIMATE Sharpe        : +1.533
+  Permuted mean Sharpe        : +1.005
+  Permuted std Sharpe         : 0.236
+  Permuted 95th pct Sharpe    : +1.458
+  Permuted 99th pct Sharpe    : +1.527
+  Simulations >= real SR      : 2/200
+  Empirical p-value           : 0.0100
+
+  Verdict: Short-side supply signal marginally significant (p<0.05)
+  Real SR is at 99.0th percentile of null distribution
+
+================================================================================
+TEST C — BTC Beta Decomposition (OLS regression)
+Regresses ULTIMATE per-period net returns on BTC per-period returns.
+alpha = supply-dilution idiosyncratic return; beta = BTC macro exposure.
+================================================================================
+
+  Running ULTIMATE with SAVE_BASKET_LOG...
+  Basket log loaded: 44 periods
+
+  OLS: r_strat = alpha + beta * r_BTC
+  N periods     : 44
+  alpha (period): +0.0269  t=+2.93  p=0.0054  ann≈+37.54%
+  beta          : +0.0750  t=+1.19  p=0.2417
+  R²            : 0.0325  (fraction of variance explained by BTC)
+
+  Alpha verdict : SIGNIFICANT positive alpha (p=0.005) — supply-dilution signal contributes +37.54%/yr above BTC beta
+  Beta verdict  : net BTC beta = +0.0750  (net-long BTC risk)
+  R² = 0.032: 3.2% of period variance explained by BTC
+         96.8% is idiosyncratic (spread-specific or noise)
+
+  Regime-conditional residual alpha (strategy vs BTC-beta expectation):
+    Bull       N=23  mean_residual=+0.0156  t=+1.29  p=0.210
+    Bear       N=15  mean_residual=-0.0131  t=-0.73  p=0.480
+    Sideways   N= 6  mean_residual=-0.0269  t=-13.62  p=0.000
+
+================================================================================
+All tests complete in 21.1 min.
+================================================================================
