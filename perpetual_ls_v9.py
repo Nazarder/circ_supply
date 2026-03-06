@@ -1052,13 +1052,13 @@ def plot_results(res: dict) -> None:
     ax.axhline(1, color="black", lw=0.6, ls="--")
     shade_regimes(ax)
     ax.set_ylabel("Cumulative Return (log)")
-    ax.set_title("Cumulative Wealth — v7")
+    ax.set_title("Cumulative Wealth — v9")
     ax.legend(fontsize=9); ax.grid(True, which="both", alpha=0.2)
 
     ax2 = axes[1]
     cum_c = (1 + res["combined_net"].dropna()).cumprod()
     cum_l = (1 + res["long_net"].dropna()).cumprod()
-    ax2.plot(cum_c.index, cum_c.values, "mediumseagreen", lw=2.5, label="Combined net (v7)")
+    ax2.plot(cum_c.index, cum_c.values, "mediumseagreen", lw=2.5, label="Combined net (v9)")
     ax2.plot(cum_l.index, cum_l.values, "steelblue",      lw=1.5, ls="--", label="Long leg net")
     ax2.axhline(1, color="black", lw=0.6, ls="--")
     shade_regimes(ax2)
@@ -1087,16 +1087,16 @@ def plot_results(res: dict) -> None:
         ax4.bar(dt, sp.values[j], color=rc.get(reg, "gray"), width=20, alpha=0.7)
     ax4.axhline(0, color="black", lw=0.8)
     ax4.legend(handles=[Patch(color=c, alpha=0.7, label=l) for l, c in rc.items()], fontsize=9)
-    ax4.set_title("Per-Period Gross Spread by Regime (v7)")
+    ax4.set_title("Per-Period Gross Spread by Regime (v9)")
     ax4.set_ylabel("Spread Return"); ax4.grid(True, alpha=0.2)
 
     ax5 = axes2[1]
     cum7 = (1 + res["combined_net"].clip(lower=-0.99)).cumprod()
     dd7  = (cum7 - cum7.cummax()) / cum7.cummax()
     ax5.fill_between(dd7.index, dd7.values, 0, color="mediumseagreen", alpha=0.55,
-                     label="v7 combined net")
+                     label="v9 combined net")
     ax5.set_ylabel("Drawdown"); ax5.set_xlabel("Date")
-    ax5.set_title("Drawdown: v7 Combined Net")
+    ax5.set_title("Drawdown: v9 Combined Net")
     ax5.legend(fontsize=9); ax5.grid(True, alpha=0.2)
     fig2.tight_layout()
     out2 = OUTPUT_DIR + "perp_ls_v9_regime_dd.png"
@@ -1178,6 +1178,81 @@ def plot_results(res: dict) -> None:
     out3 = OUTPUT_DIR + "perp_ls_v9_vs_v8.png"
     fig3.savefig(out3, dpi=150); plt.close(fig3)
     print(f"[Plot] {out3}")
+
+    # Figure 4: basket sizes, per-period trade counts, funding attribution
+    basket_sizes = res["basket_sizes"]
+    long_sizes   = np.array([s[0] for s in basket_sizes])
+    short_sizes  = np.array([s[1] for s in basket_sizes])
+    dates_arr    = np.array(res["dates"])
+
+    # per-period trade counts from basket_log
+    bl = res.get("basket_log", [])
+    bl_dates   = [e["date"] for e in bl]
+    per_opens  = np.array([len(e["long_opens"]) + len(e["short_opens"])   for e in bl])
+    per_closes = np.array([len(e["long_closes"]) + len(e["short_closes"]) for e in bl])
+
+    fl  = np.array(res["fund_actual_long"])
+    fs  = np.array(res["fund_actual_short"])
+    fcl = np.cumsum(fl)
+    fcs = np.cumsum(fs)
+
+    fig4, axes4 = plt.subplots(3, 1, figsize=(13, 11),
+                               gridspec_kw={"height_ratios": [2, 2, 2]})
+    fig4.suptitle("v9 — Basket Size, Trade Activity & Funding Attribution",
+                  fontsize=12, fontweight="bold")
+
+    # Panel 1: basket size over time
+    ax_b = axes4[0]
+    ax_b.plot(dates_arr, long_sizes,  color="steelblue", lw=1.8, marker="o",
+              markersize=3, label="Long basket size")
+    ax_b.plot(dates_arr, short_sizes, color="crimson",   lw=1.8, marker="o",
+              markersize=3, label="Short basket size")
+    ax_b.axhline(np.mean(long_sizes),  color="steelblue", lw=0.8, ls="--",
+                 label=f"Avg long {np.mean(long_sizes):.1f}")
+    ax_b.axhline(np.mean(short_sizes), color="crimson",   lw=0.8, ls="--",
+                 label=f"Avg short {np.mean(short_sizes):.1f}")
+    shade_regimes(ax_b)
+    ax_b.set_ylabel("# Tokens")
+    ax_b.set_title("Basket Size per Period")
+    ax_b.legend(fontsize=9, ncol=2); ax_b.grid(True, alpha=0.2)
+    ax_b.set_ylim(0, max(long_sizes.max(), short_sizes.max()) + 3)
+
+    # Panel 2: per-period trade counts (opens + closes)
+    ax_t = axes4[1]
+    w = 12
+    ax_t.bar(bl_dates, per_opens,  width=w, color="mediumseagreen", alpha=0.8,
+             label="Opens (long + short)")
+    ax_t.bar(bl_dates, per_closes, width=w, bottom=per_opens, color="salmon",
+             alpha=0.8, label="Closes (long + short)")
+    ax_t.axhline(np.mean(per_opens + per_closes), color="black", lw=0.8, ls="--",
+                 label=f"Avg {np.mean(per_opens + per_closes):.1f} trades/period")
+    shade_regimes(ax_t)
+    ax_t.set_ylabel("# Trades")
+    ax_t.set_title(f"Per-Period Trade Count  "
+                   f"(total opens: {per_opens.sum()}  closes: {per_closes.sum()}  "
+                   f"all: {(per_opens + per_closes).sum()})")
+    ax_t.legend(fontsize=9, ncol=3); ax_t.grid(True, alpha=0.2)
+
+    # Panel 3: cumulative funding (long drag vs short credit)
+    ax_f = axes4[2]
+    ax_f.plot(dates_arr, fcl * 100, color="steelblue", lw=1.8, ls="--",
+              label="Long funding (drag)")
+    ax_f.plot(dates_arr, fcs * 100, color="crimson",   lw=1.8,
+              label="Short funding (credit)")
+    net_cum = np.array(fcl) + np.array(fcs)
+    ax_f.plot(dates_arr, net_cum * 100, color="mediumseagreen", lw=2.2,
+              label=f"Net funding  ({net_cum[-1]*100:+.2f}%)")
+    ax_f.axhline(0, color="black", lw=0.6, ls="--")
+    shade_regimes(ax_f)
+    ax_f.set_ylabel("Cumulative Funding (%)")
+    ax_f.set_xlabel("Rebalance Date")
+    ax_f.set_title("Cumulative Funding Attribution")
+    ax_f.legend(fontsize=9, ncol=3); ax_f.grid(True, alpha=0.2)
+
+    fig4.tight_layout()
+    out4 = OUTPUT_DIR + "perp_ls_v9_activity.png"
+    fig4.savefig(out4, dpi=150); plt.close(fig4)
+    print(f"[Plot] {out4}")
 
 
 # ===========================================================================
