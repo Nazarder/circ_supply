@@ -97,7 +97,7 @@ MAX_RANK             = 200
 TOP_N_EXCLUDE        = 20
 MIN_VOLUME           = 5_000_000        # ADTV floor (daily USD proxy, both sides)
 MIN_MKTCAP           = 50_000_000
-MIN_SUPPLY_HISTORY   = 26
+MIN_SUPPLY_HISTORY   = 32
 FFILL_LIMIT          = 1
 
 # Signal (2-layer, unchanged from v4/v6)
